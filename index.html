@@ -1,0 +1,1296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>ExamNet - Student Registration & Admin Portal</title>
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- SheetJS (XLSX) for Multi-Sheet Excel Export -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  
+  <!-- Supabase JS Client -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
+    body {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      background-color: #0b0f19;
+      color: #f3f4f6;
+    }
+    .glass-card {
+      background: rgba(17, 24, 39, 0.7);
+      backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .glass-input {
+      background: rgba(31, 41, 55, 0.6);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      color: #ffffff;
+    }
+    .glass-input:focus {
+      border-color: #3b82f6;
+      box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25);
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between selection:bg-blue-600 selection:text-white">
+
+  <!-- TOP HEADER -->
+  <header class="w-full border-b border-gray-800 bg-gray-900/50 backdrop-blur-md sticky top-0 z-40">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      <div class="flex items-center space-x-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center shadow-lg shadow-blue-500/20">
+          <i data-lucide="shield-check" class="w-6 h-6 text-white"></i>
+        </div>
+        <div>
+          <span class="text-xl font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white via-gray-200 to-blue-400">ExamNet</span>
+          <span id="portal-tag" class="hidden sm:inline-block ml-2 text-xs px-2.5 py-0.5 rounded-full bg-blue-500/10 text-blue-400 font-semibold border border-blue-500/20">Official Portal</span>
+        </div>
+      </div>
+
+      <div class="flex items-center space-x-3">
+        <!-- Live Connection Status Badge -->
+        <div id="db-status-badge" class="flex items-center space-x-2 text-xs bg-gray-800/80 px-3 py-1.5 rounded-full border border-gray-700">
+          <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse" id="status-dot"></span>
+          <span id="status-text" class="text-gray-300 font-medium">LocalStorage Mode</span>
+        </div>
+
+        <!-- Admin Logout Button (Only visible on dashboard) -->
+        <button id="admin-logout-btn" onclick="logoutAdmin()" class="hidden text-xs px-3.5 py-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 font-semibold transition flex items-center gap-1.5">
+          <i data-lucide="log-out" class="w-3.5 h-3.5"></i>
+          Exit Admin
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- MAIN CONTAINER -->
+  <main class="flex-grow flex items-center justify-center p-4 sm:p-6 md:p-8">
+
+    <!-- ========================================== -->
+    <!-- VIEW 1: STUDENT REGISTRATION SCREEN (#register) -->
+    <!-- ========================================== -->
+    <div id="view-register" class="w-full max-w-lg mx-auto">
+      <div class="glass-card rounded-2xl p-6 sm:p-8 shadow-2xl relative overflow-hidden">
+        
+        <!-- Header -->
+        <div class="text-center mb-8">
+          <div class="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-blue-500/10 text-blue-400 mb-3 border border-blue-500/20">
+            <i data-lucide="user-plus" class="w-6 h-6"></i>
+          </div>
+          <h1 class="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">ExamNet Entry Form</h1>
+          <p class="text-xs sm:text-sm text-gray-400 mt-1">Ensure all details match your official student record before submitting.</p>
+        </div>
+
+        <!-- Form -->
+        <form id="student-form" onsubmit="handleStudentSubmit(event)" class="space-y-5">
+          
+          <!-- Full Name -->
+          <div>
+            <label class="block text-xs font-bold text-gray-300 uppercase tracking-wider mb-2">Full Name</label>
+            <div class="relative">
+              <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-400">
+                <i data-lucide="user" class="w-4 h-4"></i>
+              </span>
+              <input type="text" id="reg-fullname" required placeholder="Juan Dela Cruz" class="w-full pl-10 pr-4 py-3 rounded-xl glass-input text-sm focus:outline-none transition" />
+            </div>
+          </div>
+
+          <!-- Student ID / Username -->
+          <div>
+            <div class="flex items-center justify-between mb-2">
+              <label class="block text-xs font-bold text-gray-300 uppercase tracking-wider">Student ID / Username</label>
+              <span id="username-status-badge" class="hidden text-xs px-2 py-0.5 rounded-md font-semibold tracking-wide">
+                <!-- Dynamic badge -->
+              </span>
+            </div>
+            <div class="relative">
+              <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-400">
+                <i data-lucide="at-sign" class="w-4 h-4"></i>
+              </span>
+              <input 
+                type="text" 
+                id="reg-username" 
+                required 
+                placeholder="Username" 
+                oninput="handleUsernameInput(this)"
+                class="w-full pl-10 pr-4 py-3 rounded-xl glass-input text-sm focus:outline-none transition" 
+              />
+            </div>
+            <p id="username-hint" class="text-xs text-gray-500 mt-1.5 flex items-center gap-1">
+              <i data-lucide="info" class="w-3 h-3"></i>
+              No spaces allowed. Live checking availability in database.
+            </p>
+          </div>
+
+          <!-- Course / Degree Program -->
+          <div>
+            <label class="block text-xs font-bold text-gray-300 uppercase tracking-wider mb-2">Course / Degree Program</label>
+            <div class="relative">
+              <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-400">
+                <i data-lucide="book-open" class="w-4 h-4"></i>
+              </span>
+              <select id="reg-course" required class="w-full pl-10 pr-10 py-3 rounded-xl glass-input text-sm focus:outline-none appearance-none transition bg-gray-800">
+                <!-- Dynamic Options -->
+              </select>
+              <span class="absolute inset-y-0 right-0 pr-3.5 flex items-center pointer-events-none text-gray-400">
+                <i data-lucide="chevron-down" class="w-4 h-4"></i>
+              </span>
+            </div>
+          </div>
+
+          <!-- Room Number / Block -->
+          <div>
+            <label class="block text-xs font-bold text-gray-300 uppercase tracking-wider mb-2">Assigned Room / Block</label>
+            <div class="relative">
+              <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-400">
+                <i data-lucide="door-closed" class="w-4 h-4"></i>
+              </span>
+              <select id="reg-room" required class="w-full pl-10 pr-10 py-3 rounded-xl glass-input text-sm focus:outline-none appearance-none transition bg-gray-800">
+                <!-- Dynamic Options -->
+              </select>
+              <span class="absolute inset-y-0 right-0 pr-3.5 flex items-center pointer-events-none text-gray-400">
+                <i data-lucide="chevron-down" class="w-4 h-4"></i>
+              </span>
+            </div>
+          </div>
+
+          <!-- Submit Button -->
+          <button type="submit" id="submit-btn" class="w-full py-3.5 px-4 rounded-xl font-bold text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 transition-all transform active:scale-[0.98] shadow-lg shadow-blue-600/30 flex items-center justify-center space-x-2">
+            <span>Submit Registration</span>
+            <i data-lucide="arrow-right" class="w-4 h-4"></i>
+          </button>
+        </form>
+      </div>
+    </div>
+
+
+    <!-- ========================================== -->
+    <!-- VIEW 2: ADMIN LOGIN SCREEN (#admin) -->
+    <!-- ========================================== -->
+    <div id="view-admin-login" class="hidden w-full max-w-md mx-auto">
+      <div class="glass-card rounded-2xl p-6 sm:p-8 shadow-2xl border-indigo-500/20">
+        <div class="text-center mb-6">
+          <div class="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-indigo-500/10 text-indigo-400 mb-3 border border-indigo-500/20">
+            <i data-lucide="lock" class="w-6 h-6"></i>
+          </div>
+          <h2 class="text-2xl font-bold text-white">Admin Authentication</h2>
+          <p class="text-xs text-gray-400 mt-1">Authorized access only for Examination Management</p>
+        </div>
+
+        <form onsubmit="handleAdminLogin(event)" class="space-y-4">
+          <div>
+            <label class="block text-xs font-bold text-gray-300 uppercase tracking-wider mb-2">Admin Security Key</label>
+            <div class="relative">
+              <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-400">
+                <i data-lucide="key" class="w-4 h-4"></i>
+              </span>
+              <input type="password" id="admin-pass" required placeholder="Enter admin password" class="w-full pl-10 pr-4 py-3 rounded-xl glass-input text-sm focus:outline-none transition" />
+            </div>
+          </div>
+
+          <button type="submit" class="w-full py-3 px-4 rounded-xl font-bold text-white bg-indigo-600 hover:bg-indigo-500 transition shadow-lg shadow-indigo-600/30 flex items-center justify-center gap-2">
+            <i data-lucide="shield-check" class="w-4 h-4"></i>
+            Unlock Dashboard
+          </button>
+        </form>
+      </div>
+    </div>
+
+
+    <!-- ========================================== -->
+    <!-- VIEW 3: ADMIN DASHBOARD SCREEN (#dashboard) -->
+    <!-- ========================================== -->
+    <div id="view-dashboard" class="hidden w-full max-w-7xl mx-auto space-y-6">
+      
+      <!-- Top Action Bar -->
+      <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 glass-card p-6 rounded-2xl">
+        <div>
+          <h1 class="text-2xl font-extrabold text-white flex items-center gap-2">
+            <i data-lucide="layout-dashboard" class="w-6 h-6 text-blue-400"></i>
+            Exam Registrations Control
+          </h1>
+          <p class="text-xs text-gray-400 mt-0.5">Manage examinee records & export multi-tab excel sheets sorted by room & course</p>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2.5">
+          <!-- Room/Course Config Opener -->
+          <button onclick="openModal('organize-modal')" class="px-3.5 py-2.5 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 font-semibold text-xs transition flex items-center gap-1.5">
+            <i data-lucide="settings-2" class="w-4 h-4"></i>
+            Manage Rooms & Courses
+          </button>
+
+          <!-- Password Security Opener -->
+          <button onclick="openModal('change-pass-modal')" class="px-3.5 py-2.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/20 font-semibold text-xs transition flex items-center gap-1.5">
+            <i data-lucide="key-round" class="w-4 h-4"></i>
+            Security
+          </button>
+
+          <!-- Excel Export Button -->
+          <button onclick="exportMultiSheetExcel()" class="px-3.5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs transition flex items-center gap-1.5 shadow-lg shadow-emerald-600/20">
+            <i data-lucide="file-spreadsheet" class="w-4 h-4"></i>
+            Export Excel
+          </button>
+
+          <!-- Supabase Config Modal Opener -->
+          <button onclick="openModal('supabase-modal')" class="px-3.5 py-2.5 rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-200 border border-gray-700 font-semibold text-xs transition flex items-center gap-1.5">
+            <i data-lucide="database" class="w-4 h-4 text-blue-400"></i>
+            Supabase Settings
+          </button>
+        </div>
+      </div>
+
+      <!-- Quick Metrics Grid -->
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div class="glass-card p-5 rounded-2xl">
+          <p class="text-xs text-gray-400 font-semibold uppercase">Total Registered</p>
+          <h3 id="stat-total" class="text-2xl font-black text-white mt-1">0</h3>
+        </div>
+        <div class="glass-card p-5 rounded-2xl">
+          <p class="text-xs text-gray-400 font-semibold uppercase">Active Courses</p>
+          <h3 id="stat-courses" class="text-2xl font-black text-blue-400 mt-1">0</h3>
+        </div>
+        <div class="glass-card p-5 rounded-2xl">
+          <p class="text-xs text-gray-400 font-semibold uppercase">Active Rooms/Blocks</p>
+          <h3 id="stat-rooms" class="text-2xl font-black text-indigo-400 mt-1">0</h3>
+        </div>
+        <div class="glass-card p-5 rounded-2xl">
+          <p class="text-xs text-gray-400 font-semibold uppercase">Sync Status</p>
+          <h3 id="stat-sync" class="text-sm font-bold text-amber-400 mt-2 truncate">LocalStorage</h3>
+        </div>
+      </div>
+
+      <!-- Search & Filters -->
+      <div class="glass-card p-4 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-4">
+        <div class="relative w-full md:w-80">
+          <span class="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-400">
+            <i data-lucide="search" class="w-4 h-4"></i>
+          </span>
+          <input type="text" id="admin-search" oninput="renderTable()" placeholder="Search name or username..." class="w-full pl-9 pr-4 py-2 rounded-xl glass-input text-xs focus:outline-none" />
+        </div>
+
+        <div class="flex items-center gap-3 w-full md:w-auto">
+          <!-- Filter Course -->
+          <select id="filter-course" onchange="renderTable()" class="py-2 px-3 rounded-xl glass-input text-xs focus:outline-none bg-gray-800 w-1/2 md:w-auto">
+            <!-- Dynamic Options -->
+          </select>
+
+          <!-- Filter Room -->
+          <select id="filter-room" onchange="renderTable()" class="py-2 px-3 rounded-xl glass-input text-xs focus:outline-none bg-gray-800 w-1/2 md:w-auto">
+            <!-- Dynamic Options -->
+          </select>
+        </div>
+      </div>
+
+      <!-- Data Table -->
+      <div class="glass-card rounded-2xl overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead>
+              <tr class="border-b border-gray-800 bg-gray-900/60 text-xs text-gray-400 uppercase tracking-wider">
+                <th class="py-4 px-6">Student Full Name</th>
+                <th class="py-4 px-6">Username / ID</th>
+                <th class="py-4 px-6">Default Temp Password</th>
+                <th class="py-4 px-6">Course</th>
+                <th class="py-4 px-6">Room / Block</th>
+                <th class="py-4 px-6">Registered At</th>
+                <th class="py-4 px-6 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="student-table-body" class="divide-y divide-gray-800/60 text-sm">
+              <!-- Dynamic Rows -->
+            </tbody>
+          </table>
+        </div>
+        
+        <div id="empty-state" class="hidden p-12 text-center">
+          <i data-lucide="inbox" class="w-10 h-10 text-gray-600 mx-auto mb-3"></i>
+          <p class="text-gray-400 text-sm">No student registrations found matching your filter.</p>
+        </div>
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- FOOTER -->
+  <footer class="w-full border-t border-gray-800/80 py-4 text-center text-xs text-gray-500">
+    ExamNet Management System &bull; Default Credentials: ZDSPGC@<span id="footer-year"></span>
+  </footer>
+
+
+  <!-- ========================================== -->
+  <!-- MODAL 1: EDIT STUDENT RECORD -->
+  <!-- ========================================== -->
+  <div id="edit-student-modal" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="glass-card w-full max-w-md rounded-2xl p-6 relative space-y-4">
+      <button onclick="closeModal('edit-student-modal')" class="absolute top-4 right-4 text-gray-400 hover:text-white">
+        <i data-lucide="x" class="w-5 h-5"></i>
+      </button>
+
+      <div class="flex items-center space-x-3">
+        <div class="w-10 h-10 rounded-xl bg-blue-500/10 text-blue-400 flex items-center justify-center border border-blue-500/20">
+          <i data-lucide="user-cog" class="w-5 h-5"></i>
+        </div>
+        <div>
+          <h3 class="text-lg font-bold text-white">Edit Student Record</h3>
+          <p class="text-xs text-gray-400">Reassign room or correct examinee details</p>
+        </div>
+      </div>
+
+      <form onsubmit="handleSaveEditedStudent(event)" class="space-y-4 pt-2">
+        <input type="hidden" id="edit-student-id" />
+
+        <div>
+          <label class="block text-xs font-semibold text-gray-300 mb-1">Full Name</label>
+          <input type="text" id="edit-fullname" required class="w-full px-3.5 py-2.5 rounded-xl glass-input text-xs" />
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-gray-300 mb-1">Username / Student ID</label>
+          <input type="text" id="edit-username" required class="w-full px-3.5 py-2.5 rounded-xl glass-input text-xs" />
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-gray-300 mb-1">Course Assignment</label>
+          <select id="edit-course" required class="w-full px-3.5 py-2.5 rounded-xl glass-input text-xs bg-gray-800">
+            <!-- Dynamic Options -->
+          </select>
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-gray-300 mb-1">Room / Block Assignment</label>
+          <select id="edit-room" required class="w-full px-3.5 py-2.5 rounded-xl glass-input text-xs bg-gray-800">
+            <!-- Dynamic Options -->
+          </select>
+        </div>
+
+        <div class="flex items-center justify-end space-x-3 pt-2">
+          <button type="button" onclick="closeModal('edit-student-modal')" class="px-4 py-2 rounded-xl bg-gray-800 text-gray-300 text-xs font-semibold">
+            Cancel
+          </button>
+          <button type="submit" class="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold shadow-lg shadow-blue-600/30">
+            Save Changes
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+
+  <!-- ========================================== -->
+  <!-- MODAL 2: ORGANIZE ROOMS & COURSES -->
+  <!-- ========================================== -->
+  <div id="organize-modal" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="glass-card w-full max-w-2xl rounded-2xl p-6 relative space-y-6 max-h-[90vh] overflow-y-auto">
+      <button onclick="closeModal('organize-modal')" class="absolute top-4 right-4 text-gray-400 hover:text-white">
+        <i data-lucide="x" class="w-5 h-5"></i>
+      </button>
+
+      <div class="flex items-center space-x-3">
+        <div class="w-10 h-10 rounded-xl bg-indigo-500/10 text-indigo-400 flex items-center justify-center border border-indigo-500/20">
+          <i data-lucide="settings-2" class="w-5 h-5"></i>
+        </div>
+        <div>
+          <h3 class="text-lg font-bold text-white">Organize Rooms & Courses</h3>
+          <p class="text-xs text-gray-400">Add or remove choices available on the student registration form</p>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        
+        <!-- Courses Manager -->
+        <div class="space-y-3 bg-gray-900/60 p-4 rounded-xl border border-gray-800">
+          <h4 class="text-xs font-bold text-blue-400 uppercase tracking-wider flex items-center gap-1.5">
+            <i data-lucide="book-open" class="w-4 h-4"></i> Courses List
+          </h4>
+          
+          <div class="flex gap-2">
+            <input type="text" id="new-course-input" placeholder="e.g. BSIT" class="w-full px-3 py-1.5 rounded-lg glass-input text-xs" />
+            <button onclick="addCourseOption()" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-lg shrink-0">Add</button>
+          </div>
+
+          <div id="courses-list-container" class="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+            <!-- Dynamic List -->
+          </div>
+        </div>
+
+        <!-- Rooms Manager -->
+        <div class="space-y-3 bg-gray-900/60 p-4 rounded-xl border border-gray-800">
+          <h4 class="text-xs font-bold text-indigo-400 uppercase tracking-wider flex items-center gap-1.5">
+            <i data-lucide="door-closed" class="w-4 h-4"></i> Rooms / Blocks List
+          </h4>
+          
+          <div class="flex gap-2">
+            <input type="text" id="new-room-input" placeholder="e.g. Room 104" class="w-full px-3 py-1.5 rounded-lg glass-input text-xs" />
+            <button onclick="addRoomOption()" class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-lg shrink-0">Add</button>
+          </div>
+
+          <div id="rooms-list-container" class="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+            <!-- Dynamic List -->
+          </div>
+        </div>
+
+      </div>
+
+      <div class="flex justify-end pt-2">
+        <button onclick="closeModal('organize-modal')" class="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shadow-lg shadow-indigo-600/30">
+          Finished Organizing
+        </button>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ========================================== -->
+  <!-- MODAL 3: CHANGE ADMIN PASSWORD -->
+  <!-- ========================================== -->
+  <div id="change-pass-modal" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="glass-card w-full max-w-sm rounded-2xl p-6 relative space-y-4">
+      <button onclick="closeModal('change-pass-modal')" class="absolute top-4 right-4 text-gray-400 hover:text-white">
+        <i data-lucide="x" class="w-5 h-5"></i>
+      </button>
+
+      <div class="flex items-center space-x-3">
+        <div class="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center border border-amber-500/20">
+          <i data-lucide="key-round" class="w-5 h-5"></i>
+        </div>
+        <div>
+          <h3 class="text-lg font-bold text-white">Admin Password</h3>
+          <p class="text-xs text-gray-400">Update your access key dynamically</p>
+        </div>
+      </div>
+
+      <form onsubmit="handleUpdateAdminPassword(event)" class="space-y-3 pt-2">
+        <div>
+          <label class="block text-xs font-semibold text-gray-300 mb-1">New Password</label>
+          <input type="password" id="new-admin-pass" required placeholder="Enter new password" class="w-full px-3.5 py-2.5 rounded-xl glass-input text-xs" />
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-gray-300 mb-1">Confirm New Password</label>
+          <input type="password" id="confirm-admin-pass" required placeholder="Confirm new password" class="w-full px-3.5 py-2.5 rounded-xl glass-input text-xs" />
+        </div>
+
+        <div class="flex items-center justify-end space-x-2 pt-2">
+          <button type="button" onclick="closeModal('change-pass-modal')" class="px-4 py-2 rounded-xl bg-gray-800 text-gray-300 text-xs font-semibold">
+            Cancel
+          </button>
+          <button type="submit" class="px-5 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold shadow-lg shadow-amber-600/30">
+            Update Password
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+
+  <!-- ========================================== -->
+  <!-- MODAL 4: SUPABASE CONFIGURATION -->
+  <!-- ========================================== -->
+  <div id="supabase-modal" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="glass-card w-full max-w-xl rounded-2xl p-6 relative space-y-4 max-h-[90vh] overflow-y-auto">
+      <button onclick="closeModal('supabase-modal')" class="absolute top-4 right-4 text-gray-400 hover:text-white">
+        <i data-lucide="x" class="w-5 h-5"></i>
+      </button>
+
+      <div class="flex items-center space-x-3">
+        <div class="w-10 h-10 rounded-xl bg-blue-500/10 text-blue-400 flex items-center justify-center border border-blue-500/20">
+          <i data-lucide="database" class="w-5 h-5"></i>
+        </div>
+        <div>
+          <h3 class="text-lg font-bold text-white">Supabase Cloud Database Settings</h3>
+          <p class="text-xs text-gray-400">Connect your live PostgreSQL database</p>
+        </div>
+      </div>
+
+      <div class="space-y-4 pt-2">
+        <div>
+          <label class="block text-xs font-semibold text-gray-300 mb-1">Project URL</label>
+          <input type="text" id="sp-url" placeholder="https://your-project.supabase.co" class="w-full px-3.5 py-2.5 rounded-xl glass-input text-xs" />
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-gray-300 mb-1">Anon (Public) Key</label>
+          <input type="password" id="sp-key" placeholder="eyJhYmdj... (your public key)" class="w-full px-3.5 py-2.5 rounded-xl glass-input text-xs" />
+        </div>
+
+        <!-- SQL Generator Code Snippet -->
+        <div class="p-3 bg-gray-900 rounded-xl border border-gray-800 text-xs space-y-2">
+          <div class="flex items-center justify-between text-gray-400 font-mono">
+            <span>Required Supabase SQL Table Schema:</span>
+            <button onclick="copySQL()" class="text-blue-400 hover:text-blue-300 font-semibold text-[11px] flex items-center gap-1">
+              <i data-lucide="copy" class="w-3 h-3"></i> Copy SQL
+            </button>
+          </div>
+          <pre class="bg-gray-950 p-2.5 rounded-lg text-gray-300 text-[11px] font-mono overflow-x-auto leading-relaxed" id="sql-snippet">
+create table exam_registrations (
+  id uuid default gen_random_uuid() primary key,
+  full_name text not null,
+  username text not null unique,
+  default_password text not null,
+  course text not null,
+  room_number text not null,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+alter table exam_registrations enable row level security;
+create policy "Allow public inserts" on exam_registrations for insert with check (true);
+create policy "Allow public selects" on exam_registrations for select using (true);
+create policy "Allow public updates" on exam_registrations for update using (true);
+create policy "Allow public deletes" on exam_registrations for delete using (true);</pre>
+        </div>
+
+        <div class="flex items-center justify-end space-x-3 pt-2">
+          <button onclick="disconnectSupabase()" class="px-4 py-2 rounded-xl bg-red-500/10 text-red-400 hover:bg-red-500/20 text-xs font-semibold border border-red-500/20">
+            Disconnect & Use LocalStorage
+          </button>
+          <button onclick="saveSupabaseSettings()" class="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold shadow-lg shadow-blue-600/30">
+            Save & Connect
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ========================================== -->
+  <!-- MODAL 5: SUCCESS NOTIFICATION -->
+  <!-- ========================================== -->
+  <div id="success-modal" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="glass-card w-full max-w-md rounded-2xl p-6 sm:p-7 space-y-5 border-emerald-500/30 relative">
+      
+      <div class="text-center space-y-2">
+        <div class="w-14 h-14 rounded-full bg-emerald-500/10 text-emerald-400 flex items-center justify-center mx-auto border border-emerald-500/20">
+          <i data-lucide="check-circle-2" class="w-7 h-7"></i>
+        </div>
+        <h3 class="text-xl font-bold text-white">Registration Complete!</h3>
+        <p class="text-xs text-gray-400">Your examinee profile has been initialized in the system database.</p>
+      </div>
+
+      <!-- Account Summary Card -->
+      <div class="bg-gray-900/90 rounded-xl p-4 border border-gray-800 space-y-3 text-xs">
+        <div class="flex justify-between border-b border-gray-800/80 pb-2">
+          <span class="text-gray-400">Full Name:</span>
+          <span id="succ-fullname" class="font-bold text-white"></span>
+        </div>
+        <div class="flex justify-between border-b border-gray-800/80 pb-2">
+          <span class="text-gray-400">Username:</span>
+          <span id="succ-username" class="font-mono font-bold text-blue-400"></span>
+        </div>
+        <div class="flex justify-between border-b border-gray-800/80 pb-2">
+          <span class="text-gray-400">Room & Course:</span>
+          <span id="succ-room-course" class="font-semibold text-indigo-300"></span>
+        </div>
+        <div class="flex justify-between items-center bg-blue-500/10 p-2.5 rounded-lg border border-blue-500/20">
+          <div>
+            <span class="block text-[10px] text-blue-300 font-semibold uppercase tracking-wider">Initial Default Password</span>
+            <span id="succ-password" class="font-mono font-black text-sm text-white"></span>
+          </div>
+          <button onclick="copyAccountInfo()" class="px-2.5 py-1.5 bg-blue-600 hover:bg-blue-500 text-white font-semibold text-[11px] rounded-md transition flex items-center gap-1">
+            <i data-lucide="copy" class="w-3 h-3"></i> Copy Info
+          </button>
+        </div>
+      </div>
+
+      <p class="text-[11px] text-amber-400/90 bg-amber-500/10 p-2.5 rounded-lg border border-amber-500/20 flex items-start gap-1.5 leading-relaxed">
+        <i data-lucide="alert-circle" class="w-4 h-4 shrink-0 mt-0.5"></i>
+        <span>Use this temporary password for your first login on ExamNet. You will be prompted to set a personal password afterward.</span>
+      </p>
+
+      <button onclick="closeModal('success-modal')" class="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-lg shadow-emerald-600/30">
+        Done
+      </button>
+    </div>
+  </div>
+
+
+  <!-- APPLICATION JAVASCRIPT -->
+  <script>
+    // --- APP STATE & STORAGE ---
+    let supabaseClient = null;
+    let studentsData = [];
+    let isUsernameAvailable = false;
+    let usernameDebounceTimer = null;
+
+    // Configurable Dynamic Lists
+    let availableCourses = ["BSIT", "BSCS", "BSIS", "BSEMC", "BSCPE"];
+    let availableRooms = ["Room 101", "Room 102", "Room 103", "Lab A", "Lab B"];
+
+    const CURRENT_YEAR = new Date().getFullYear();
+    const DEFAULT_PASS_PATTERN = `ZDSPGC@${CURRENT_YEAR}`;
+    
+    // Obfuscated default fallback credentials ("superadmin" encoded to base64)
+    const OBFUSCATED_DEFAULT = "c3VwZXJhZG1pbg==";
+
+    let lastCreatedAccount = null;
+
+    // --- INITIALIZATION ---
+    window.addEventListener('DOMContentLoaded', () => {
+      document.getElementById('footer-year').innerText = CURRENT_YEAR;
+      loadDynamicLists();
+      lucide.createIcons();
+      initRouting();
+      initSupabaseConnection();
+      loadRegistrations();
+
+      window.addEventListener('hashchange', initRouting);
+    });
+
+    // --- SECURITY & ADMIN CREDENTIAL ENGINE ---
+    function getStoredAdminPassword() {
+      const stored = localStorage.getItem('examnet_admin_key');
+      if (stored) return stored;
+      // Decode fallback default key ("superadmin")
+      return atob(OBFUSCATED_DEFAULT);
+    }
+
+    function handleAdminLogin(e) {
+      e.preventDefault();
+      const inputPass = document.getElementById('admin-pass').value;
+      const validPass = getStoredAdminPassword();
+
+      if (inputPass === validPass) {
+        sessionStorage.setItem('examnet_admin_auth', 'true');
+        document.getElementById('admin-pass').value = '';
+        window.location.hash = '#dashboard';
+      } else {
+        alert('Incorrect admin security key!');
+      }
+    }
+
+    function handleUpdateAdminPassword(e) {
+      e.preventDefault();
+      const newPass = document.getElementById('new-admin-pass').value.trim();
+      const confirmPass = document.getElementById('confirm-admin-pass').value.trim();
+
+      if (!newPass) {
+        alert("Password cannot be empty.");
+        return;
+      }
+
+      if (newPass !== confirmPass) {
+        alert("New password and confirmation do not match!");
+        return;
+      }
+
+      localStorage.setItem('examnet_admin_key', newPass);
+      document.getElementById('new-admin-pass').value = '';
+      document.getElementById('confirm-admin-pass').value = '';
+      closeModal('change-pass-modal');
+      alert("Admin password updated successfully!");
+    }
+
+
+    // --- DYNAMIC LIST MANAGEMENT ---
+    function loadDynamicLists() {
+      const savedCourses = localStorage.getItem('examnet_courses');
+      const savedRooms = localStorage.getItem('examnet_rooms');
+
+      if (savedCourses) availableCourses = JSON.parse(savedCourses);
+      if (savedRooms) availableRooms = JSON.parse(savedRooms);
+
+      populateDropdowns();
+      renderOrganizeLists();
+    }
+
+    function saveDynamicLists() {
+      localStorage.setItem('examnet_courses', JSON.stringify(availableCourses));
+      localStorage.setItem('examnet_rooms', JSON.stringify(availableRooms));
+      populateDropdowns();
+      renderOrganizeLists();
+    }
+
+    function populateDropdowns() {
+      const regCourse = document.getElementById('reg-course');
+      const editCourse = document.getElementById('edit-course');
+      const filterCourse = document.getElementById('filter-course');
+
+      const courseOpts = availableCourses.map(c => `<option value="${c}">${c}</option>`).join('');
+      
+      regCourse.innerHTML = `<option value="" disabled selected>Select your course</option>` + courseOpts;
+      editCourse.innerHTML = courseOpts;
+      filterCourse.innerHTML = `<option value="ALL">All Courses</option>` + courseOpts;
+
+      const regRoom = document.getElementById('reg-room');
+      const editRoom = document.getElementById('edit-room');
+      const filterRoom = document.getElementById('filter-room');
+
+      const roomOpts = availableRooms.map(r => `<option value="${r}">${r}</option>`).join('');
+
+      regRoom.innerHTML = `<option value="" disabled selected>Select room assignment</option>` + roomOpts;
+      editRoom.innerHTML = roomOpts;
+      filterRoom.innerHTML = `<option value="ALL">All Rooms</option>` + roomOpts;
+    }
+
+    function renderOrganizeLists() {
+      const courseContainer = document.getElementById('courses-list-container');
+      courseContainer.innerHTML = availableCourses.map((c, i) => `
+        <div class="flex items-center justify-between bg-gray-800/80 px-3 py-1.5 rounded-lg text-xs">
+          <span class="font-medium text-gray-200">${c}</span>
+          <button onclick="removeCourseOption(${i})" class="text-red-400 hover:text-red-300">
+            <i data-lucide="x" class="w-3.5 h-3.5"></i>
+          </button>
+        </div>
+      `).join('');
+
+      const roomContainer = document.getElementById('rooms-list-container');
+      roomContainer.innerHTML = availableRooms.map((r, i) => `
+        <div class="flex items-center justify-between bg-gray-800/80 px-3 py-1.5 rounded-lg text-xs">
+          <span class="font-medium text-gray-200">${r}</span>
+          <button onclick="removeRoomOption(${i})" class="text-red-400 hover:text-red-300">
+            <i data-lucide="x" class="w-3.5 h-3.5"></i>
+          </button>
+        </div>
+      `).join('');
+
+      lucide.createIcons();
+    }
+
+    function addCourseOption() {
+      const input = document.getElementById('new-course-input');
+      const val = input.value.trim().toUpperCase();
+      if (val && !availableCourses.includes(val)) {
+        availableCourses.push(val);
+        saveDynamicLists();
+        input.value = '';
+      }
+    }
+
+    function removeCourseOption(index) {
+      if (availableCourses.length <= 1) {
+        alert("You must keep at least one course option.");
+        return;
+      }
+      availableCourses.splice(index, 1);
+      saveDynamicLists();
+    }
+
+    function addRoomOption() {
+      const input = document.getElementById('new-room-input');
+      const val = input.value.trim();
+      if (val && !availableRooms.includes(val)) {
+        availableRooms.push(val);
+        saveDynamicLists();
+        input.value = '';
+      }
+    }
+
+    function removeRoomOption(index) {
+      if (availableRooms.length <= 1) {
+        alert("You must keep at least one room option.");
+        return;
+      }
+      availableRooms.splice(index, 1);
+      saveDynamicLists();
+    }
+
+
+    // --- ROUTING ENGINE ---
+    function initRouting() {
+      const hash = window.location.hash || '#register';
+
+      document.getElementById('view-register').classList.add('hidden');
+      document.getElementById('view-admin-login').classList.add('hidden');
+      document.getElementById('view-dashboard').classList.add('hidden');
+      document.getElementById('admin-logout-btn').classList.add('hidden');
+
+      if (hash === '#admin') {
+        if (sessionStorage.getItem('examnet_admin_auth') === 'true') {
+          window.location.hash = '#dashboard';
+          return;
+        }
+        document.getElementById('view-admin-login').classList.remove('hidden');
+      } else if (hash === '#dashboard') {
+        if (sessionStorage.getItem('examnet_admin_auth') !== 'true') {
+          window.location.hash = '#admin';
+          return;
+        }
+        document.getElementById('view-dashboard').classList.remove('hidden');
+        document.getElementById('admin-logout-btn').classList.remove('hidden');
+        loadRegistrations();
+      } else {
+        document.getElementById('view-register').classList.remove('hidden');
+      }
+    }
+
+    function logoutAdmin() {
+      sessionStorage.removeItem('examnet_admin_auth');
+      window.location.hash = '#register';
+    }
+
+
+    // --- SUPABASE CLIENT SETUP ---
+    function initSupabaseConnection() {
+      const url = localStorage.getItem('examnet_sp_url');
+      const key = localStorage.getItem('examnet_sp_key');
+
+      const badgeDot = document.getElementById('status-dot');
+      const badgeText = document.getElementById('status-text');
+      const statSync = document.getElementById('stat-sync');
+
+      if (url && key && window.supabase) {
+        try {
+          supabaseClient = window.supabase.createClient(url, key);
+          badgeDot.className = "w-2 h-2 rounded-full bg-emerald-400 animate-pulse";
+          badgeText.innerText = "Supabase Live";
+          if (statSync) statSync.innerText = "Supabase Cloud DB";
+          
+          document.getElementById('sp-url').value = url;
+          document.getElementById('sp-key').value = key;
+        } catch (err) {
+          console.error("Supabase init failed", err);
+          fallbackToLocal();
+        }
+      } else {
+        fallbackToLocal();
+      }
+    }
+
+    function fallbackToLocal() {
+      supabaseClient = null;
+      document.getElementById('status-dot').className = "w-2 h-2 rounded-full bg-amber-400";
+      document.getElementById('status-text').innerText = "LocalStorage Mode";
+      const statSync = document.getElementById('stat-sync');
+      if (statSync) statSync.innerText = "LocalStorage (Offline)";
+    }
+
+    function saveSupabaseSettings() {
+      const url = document.getElementById('sp-url').value.trim();
+      const key = document.getElementById('sp-key').value.trim();
+
+      if (!url || !key) {
+        alert("Please provide both Supabase URL and Anon Key.");
+        return;
+      }
+
+      localStorage.setItem('examnet_sp_url', url);
+      localStorage.setItem('examnet_sp_key', key);
+
+      initSupabaseConnection();
+      closeModal('supabase-modal');
+      loadRegistrations();
+    }
+
+    function disconnectSupabase() {
+      localStorage.removeItem('examnet_sp_url');
+      localStorage.removeItem('examnet_sp_key');
+      document.getElementById('sp-url').value = '';
+      document.getElementById('sp-key').value = '';
+      fallbackToLocal();
+      closeModal('supabase-modal');
+      loadRegistrations();
+    }
+
+
+    // --- REALTIME USERNAME NO-SPACE & AVAILABILITY VALIDATION ---
+    function handleUsernameInput(input) {
+      let value = input.value.replace(/\s+/g, '');
+      input.value = value;
+
+      const badge = document.getElementById('username-status-badge');
+
+      if (!value) {
+        badge.classList.add('hidden');
+        isUsernameAvailable = false;
+        return;
+      }
+
+      badge.classList.remove('hidden');
+      badge.className = "text-xs px-2 py-0.5 rounded-md font-semibold bg-gray-800 text-gray-400 animate-pulse";
+      badge.innerText = "Checking availability...";
+
+      clearTimeout(usernameDebounceTimer);
+      usernameDebounceTimer = setTimeout(() => {
+        checkUsernameAvailability(value);
+      }, 300);
+    }
+
+    async function checkUsernameAvailability(username) {
+      const badge = document.getElementById('username-status-badge');
+      let isTaken = false;
+
+      if (supabaseClient) {
+        try {
+          const { data, error } = await supabaseClient
+            .from('exam_registrations')
+            .select('id')
+            .ilike('username', username)
+            .limit(1);
+
+          if (!error && data && data.length > 0) {
+            isTaken = true;
+          }
+        } catch (e) {
+          console.error("Availability check error:", e);
+        }
+      } else {
+        const localData = JSON.parse(localStorage.getItem('examnet_students') || '[]');
+        isTaken = localData.some(s => s.username.toLowerCase() === username.toLowerCase());
+      }
+
+      if (isTaken) {
+        isUsernameAvailable = false;
+        badge.className = "text-xs px-2.5 py-0.5 rounded-md font-bold bg-red-500/20 text-red-400 border border-red-500/30";
+        badge.innerText = "Username Taken";
+      } else {
+        isUsernameAvailable = true;
+        badge.className = "text-xs px-2.5 py-0.5 rounded-md font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30";
+        badge.innerText = "Available";
+      }
+    }
+
+
+    // --- DATA LOADING & PERSISTENCE ---
+    async function loadRegistrations() {
+      if (supabaseClient) {
+        try {
+          const { data, error } = await supabaseClient
+            .from('exam_registrations')
+            .select('*')
+            .order('created_at', { ascending: false });
+
+          if (!error && data) {
+            studentsData = data;
+          } else {
+            console.error(error);
+            loadFromLocal();
+          }
+        } catch (e) {
+          loadFromLocal();
+        }
+      } else {
+        loadFromLocal();
+      }
+
+      renderTable();
+      updateMetrics();
+    }
+
+    function loadFromLocal() {
+      studentsData = JSON.parse(localStorage.getItem('examnet_students') || '[]');
+    }
+
+    function saveToLocal() {
+      localStorage.setItem('examnet_students', JSON.stringify(studentsData));
+    }
+
+
+    // --- STUDENT SUBMISSION WORKFLOW ---
+    async function handleStudentSubmit(e) {
+      e.preventDefault();
+
+      const fullName = document.getElementById('reg-fullname').value.trim();
+      const username = document.getElementById('reg-username').value.trim();
+      const course = document.getElementById('reg-course').value;
+      const room = document.getElementById('reg-room').value;
+
+      if (username.includes(' ')) {
+        alert('Username cannot contain spaces.');
+        return;
+      }
+
+      if (!isUsernameAvailable) {
+        alert('Username is already taken or being verified. Please enter a unique username.');
+        return;
+      }
+
+      const defaultPassword = DEFAULT_PASS_PATTERN;
+
+      const newRecord = {
+        id: crypto.randomUUID(),
+        full_name: fullName,
+        username: username,
+        default_password: defaultPassword,
+        course: course,
+        room_number: room,
+        created_at: new Date().toISOString()
+      };
+
+      const btn = document.getElementById('submit-btn');
+      btn.disabled = true;
+      btn.innerText = "Saving Registration...";
+
+      if (supabaseClient) {
+        try {
+          const { error } = await supabaseClient
+            .from('exam_registrations')
+            .insert([{
+              full_name: fullName,
+              username: username,
+              default_password: defaultPassword,
+              course: course,
+              room_number: room
+            }]);
+
+          if (error) {
+            alert('Supabase Insert Error: ' + error.message);
+            btn.disabled = false;
+            btn.innerText = "Submit Registration";
+            return;
+          }
+        } catch (err) {
+          alert("Failed to reach Supabase. Saving locally.");
+          studentsData.unshift(newRecord);
+          saveToLocal();
+        }
+      } else {
+        studentsData.unshift(newRecord);
+        saveToLocal();
+      }
+
+      document.getElementById('student-form').reset();
+      document.getElementById('username-status-badge').classList.add('hidden');
+      isUsernameAvailable = false;
+      btn.disabled = false;
+      btn.innerText = "Submit Registration";
+
+      lastCreatedAccount = newRecord;
+
+      document.getElementById('succ-fullname').innerText = fullName;
+      document.getElementById('succ-username').innerText = username;
+      document.getElementById('succ-room-course').innerText = `${room} (${course})`;
+      document.getElementById('succ-password').innerText = defaultPassword;
+
+      openModal('success-modal');
+      loadRegistrations();
+    }
+
+
+    // --- EDITING STUDENT RECORD ---
+    function openEditStudentModal(id) {
+      const student = studentsData.find(s => s.id === id);
+      if (!student) return;
+
+      document.getElementById('edit-student-id').value = student.id;
+      document.getElementById('edit-fullname').value = student.full_name;
+      document.getElementById('edit-username').value = student.username;
+      document.getElementById('edit-course').value = student.course;
+      document.getElementById('edit-room').value = student.room_number;
+
+      openModal('edit-student-modal');
+    }
+
+    async function handleSaveEditedStudent(e) {
+      e.preventDefault();
+
+      const id = document.getElementById('edit-student-id').value;
+      const fullName = document.getElementById('edit-fullname').value.trim();
+      const username = document.getElementById('edit-username').value.trim().replace(/\s+/g, '');
+      const course = document.getElementById('edit-course').value;
+      const room = document.getElementById('edit-room').value;
+
+      if (supabaseClient) {
+        try {
+          const { error } = await supabaseClient
+            .from('exam_registrations')
+            .update({
+              full_name: fullName,
+              username: username,
+              course: course,
+              room_number: room
+            })
+            .eq('id', id);
+
+          if (error) {
+            alert("Error updating record: " + error.message);
+            return;
+          }
+        } catch (err) {
+          console.error("Update failed", err);
+        }
+      }
+
+      const index = studentsData.findIndex(s => s.id === id);
+      if (index !== -1) {
+        studentsData[index].full_name = fullName;
+        studentsData[index].username = username;
+        studentsData[index].course = course;
+        studentsData[index].room_number = room;
+        saveToLocal();
+      }
+
+      closeModal('edit-student-modal');
+      renderTable();
+      updateMetrics();
+    }
+
+    async function deleteRecord(id) {
+      if (!confirm("Are you sure you want to delete this examinee record?")) return;
+
+      if (supabaseClient) {
+        await supabaseClient.from('exam_registrations').delete().eq('id', id);
+      }
+      studentsData = studentsData.filter(s => s.id !== id);
+      saveToLocal();
+      renderTable();
+      updateMetrics();
+    }
+
+    function copyAccountInfo() {
+      if (!lastCreatedAccount) return;
+      const infoText = `ExamNet Login Details:\nFull Name: ${lastCreatedAccount.full_name}\nUsername: ${lastCreatedAccount.username}\nCourse: ${lastCreatedAccount.course}\nRoom: ${lastCreatedAccount.room_number}\nDefault Password: ${lastCreatedAccount.default_password}`;
+      navigator.clipboard.writeText(infoText);
+      alert("Login details copied to clipboard!");
+    }
+
+
+    // --- RENDER DASHBOARD TABLE ---
+    function renderTable() {
+      const tbody = document.getElementById('student-table-body');
+      const emptyState = document.getElementById('empty-state');
+      if (!tbody) return;
+
+      const searchQuery = (document.getElementById('admin-search')?.value || '').toLowerCase();
+      const courseFilter = document.getElementById('filter-course')?.value || 'ALL';
+      const roomFilter = document.getElementById('filter-room')?.value || 'ALL';
+
+      const filtered = studentsData.filter(s => {
+        const matchesSearch = s.full_name.toLowerCase().includes(searchQuery) || s.username.toLowerCase().includes(searchQuery);
+        const matchesCourse = courseFilter === 'ALL' || s.course === courseFilter;
+        const matchesRoom = roomFilter === 'ALL' || s.room_number === roomFilter;
+        return matchesSearch && matchesCourse && matchesRoom;
+      });
+
+      if (filtered.length === 0) {
+        tbody.innerHTML = '';
+        emptyState.classList.remove('hidden');
+        return;
+      }
+
+      emptyState.classList.add('hidden');
+      tbody.innerHTML = filtered.map(s => `
+        <tr class="hover:bg-gray-800/40 transition">
+          <td class="py-3.5 px-6 font-semibold text-white">${escapeHtml(s.full_name)}</td>
+          <td class="py-3.5 px-6 font-mono text-xs text-blue-400">${escapeHtml(s.username)}</td>
+          <td class="py-3.5 px-6 font-mono text-xs text-amber-300 font-bold">${escapeHtml(s.default_password || DEFAULT_PASS_PATTERN)}</td>
+          <td class="py-3.5 px-6">
+            <span class="px-2.5 py-1 rounded-md text-xs font-semibold bg-blue-500/10 text-blue-400 border border-blue-500/20">${escapeHtml(s.course)}</span>
+          </td>
+          <td class="py-3.5 px-6">
+            <span class="px-2.5 py-1 rounded-md text-xs font-semibold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">${escapeHtml(s.room_number)}</span>
+          </td>
+          <td class="py-3.5 px-6 text-xs text-gray-400">${new Date(s.created_at).toLocaleDateString()} ${new Date(s.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</td>
+          <td class="py-3.5 px-6 text-right space-x-1">
+            <button onclick="openEditStudentModal('${s.id}')" class="p-1.5 rounded-lg bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 transition" title="Edit Student">
+              <i data-lucide="pencil" class="w-4 h-4"></i>
+            </button>
+            <button onclick="deleteRecord('${s.id}')" class="p-1.5 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 transition" title="Delete Student">
+              <i data-lucide="trash-2" class="w-4 h-4"></i>
+            </button>
+          </td>
+        </tr>
+      `).join('');
+
+      lucide.createIcons();
+    }
+
+    function updateMetrics() {
+      document.getElementById('stat-total').innerText = studentsData.length;
+      
+      const uniqueCourses = new Set(studentsData.map(s => s.course));
+      const uniqueRooms = new Set(studentsData.map(s => s.room_number));
+
+      document.getElementById('stat-courses').innerText = uniqueCourses.size;
+      document.getElementById('stat-rooms').innerText = uniqueRooms.size;
+    }
+
+
+    // --- MULTI-SHEET EXCEL EXPORT ENGINE (SHEETJS) ---
+    function exportMultiSheetExcel() {
+      if (studentsData.length === 0) {
+        alert("No student records available to export!");
+        return;
+      }
+
+      const wb = XLSX.utils.book_new();
+
+      // 1. SUMMARY SHEET
+      const summaryData = [
+        ["ExamNet System - Master Registration Summary"],
+        ["Generated At:", new Date().toLocaleString()],
+        ["Total Registered Examinees:", studentsData.length],
+        [],
+        ["Course Breakdown"],
+        ["Course", "Total Students"]
+      ];
+
+      const courseCounts = {};
+      const roomCounts = {};
+
+      studentsData.forEach(s => {
+        courseCounts[s.course] = (courseCounts[s.course] || 0) + 1;
+        roomCounts[s.room_number] = (roomCounts[s.room_number] || 0) + 1;
+      });
+
+      Object.entries(courseCounts).forEach(([crs, cnt]) => summaryData.push([crs, cnt]));
+      
+      summaryData.push([], ["Room Assignment Breakdown"], ["Room / Block", "Total Students"]);
+      Object.entries(roomCounts).forEach(([rm, cnt]) => summaryData.push([rm, cnt]));
+
+      const summarySheet = XLSX.utils.aoa_to_sheet(summaryData);
+      XLSX.utils.book_append_sheet(wb, summarySheet, "Overall Summary");
+
+      // 2. MASTER LIST SHEET
+      const masterRows = studentsData.map((s, idx) => ({
+        "No.": idx + 1,
+        "Full Name": s.full_name,
+        "Username / Student ID": s.username,
+        "Default Initial Password": s.default_password || DEFAULT_PASS_PATTERN,
+        "Course": s.course,
+        "Room / Block": s.room_number,
+        "Registration Timestamp": new Date(s.created_at).toLocaleString()
+      }));
+      const masterSheet = XLSX.utils.json_to_sheet(masterRows);
+      XLSX.utils.book_append_sheet(wb, masterSheet, "Master List");
+
+      // 3. GROUPED ROOM & COURSE SHEETS
+      const grouped = {};
+      studentsData.forEach(s => {
+        const key = `${s.room_number} - ${s.course}`;
+        if (!grouped[key]) grouped[key] = [];
+        grouped[key].push(s);
+      });
+
+      Object.keys(grouped).forEach(groupKey => {
+        const sheetRows = grouped[groupKey].map((s, i) => ({
+          "Seat No.": i + 1,
+          "Full Name": s.full_name,
+          "Username / Student ID": s.username,
+          "Default Initial Password": s.default_password || DEFAULT_PASS_PATTERN,
+          "Course": s.course,
+          "Room / Block": s.room_number
+        }));
+
+        const sheet = XLSX.utils.json_to_sheet(sheetRows);
+        const safeSheetName = groupKey.replace(/[:\\/?*\[\]]/g, "").substring(0, 30);
+        XLSX.utils.book_append_sheet(wb, sheet, safeSheetName);
+      });
+
+      XLSX.writeFile(wb, `ExamNet_Registrations_${new Date().toISOString().slice(0,10)}.xlsx`);
+    }
+
+
+    // --- HELPERS & MODALS ---
+    function openModal(id) { document.getElementById(id).classList.remove('hidden'); }
+    function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+    
+    function copySQL() {
+      const sql = document.getElementById('sql-snippet').innerText;
+      navigator.clipboard.writeText(sql);
+      alert("SQL Schema copied to clipboard!");
+    }
+
+    function escapeHtml(str) {
+      return (str || '').replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    }
+  </script>
+</body>
+</html>
