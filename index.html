@@ -829,8 +829,8 @@ create policy "Allow public deletes" on exam_registrations for delete using (tru
 
     // --- SUPABASE CLIENT SETUP ---
     function initSupabaseConnection() {
-      const url = localStorage.getItem('examnet_sp_url');
-      const key = localStorage.getItem('examnet_sp_key');
+  	const url = localStorage.getItem('examnet_sp_url') || 'https://btlqfacbxdilyaejcywf.supabase.co';
+  	const key = localStorage.getItem('examnet_sp_key') || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ0bHFmYWNieGRpbHlhZWpjeXdmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTM2MTkzNzEsImV4cCI6MjEwOTE5NTM3MX0.VOprGy2aPUeQkDX2feiXeJgzLbDbdD13I9DNcJMHPxw';
 
       const badgeDot = document.getElementById('status-dot');
       const badgeText = document.getElementById('status-text');
