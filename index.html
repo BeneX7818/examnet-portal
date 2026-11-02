@@ -541,11 +541,22 @@ create table exam_registrations (
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
+create table if not exists exam_config (
+  key text primary key,
+  value jsonb not null
+);
+
 alter table exam_registrations enable row level security;
+alter table exam_config enable row level security;
+
 create policy "Allow public inserts" on exam_registrations for insert with check (true);
 create policy "Allow public selects" on exam_registrations for select using (true);
 create policy "Allow public updates" on exam_registrations for update using (true);
-create policy "Allow public deletes" on exam_registrations for delete using (true);</pre>
+create policy "Allow public deletes" on exam_registrations for delete using (true);
+
+create policy "Allow public read exam_config" on exam_config for select using (true);
+create policy "Allow public upsert exam_config" on exam_config for insert with check (true);
+create policy "Allow public update exam_config" on exam_config for update using (true);</pre>
         </div>
 
         <div class="flex items-center justify-end space-x-3 pt-2">
@@ -635,7 +646,6 @@ create policy "Allow public deletes" on exam_registrations for delete using (tru
     // --- INITIALIZATION ---
     window.addEventListener('DOMContentLoaded', () => {
       document.getElementById('footer-year').innerText = CURRENT_YEAR;
-      loadDynamicLists();
       lucide.createIcons();
       initRouting();
       initSupabaseConnection();
@@ -648,7 +658,6 @@ create policy "Allow public deletes" on exam_registrations for delete using (tru
     function getStoredAdminPassword() {
       const stored = localStorage.getItem('examnet_admin_key');
       if (stored) return stored;
-      // Decode fallback default key ("superadmin")
       return atob(OBFUSCATED_DEFAULT);
     }
 
@@ -689,21 +698,58 @@ create policy "Allow public deletes" on exam_registrations for delete using (tru
     }
 
 
-    // --- DYNAMIC LIST MANAGEMENT ---
-    function loadDynamicLists() {
-      const savedCourses = localStorage.getItem('examnet_courses');
-      const savedRooms = localStorage.getItem('examnet_rooms');
+    // --- DYNAMIC LIST MANAGEMENT (SUPABASE + LOCAL STORAGE) ---
+    async function loadDynamicLists() {
+      let loadedFromCloud = false;
 
-      if (savedCourses) availableCourses = JSON.parse(savedCourses);
-      if (savedRooms) availableRooms = JSON.parse(savedRooms);
+      if (supabaseClient) {
+        try {
+          const { data, error } = await supabaseClient.from('exam_config').select('*');
+          if (!error && data && data.length > 0) {
+            data.forEach(row => {
+              if (row.key === 'courses' && Array.isArray(row.value)) {
+                availableCourses = row.value;
+              }
+              if (row.key === 'rooms' && Array.isArray(row.value)) {
+                availableRooms = row.value;
+              }
+            });
+            loadedFromCloud = true;
+          }
+        } catch (err) {
+          console.error("Failed to load config from Supabase:", err);
+        }
+      }
+
+      if (!loadedFromCloud) {
+        const savedCourses = localStorage.getItem('examnet_courses');
+        const savedRooms = localStorage.getItem('examnet_rooms');
+
+        if (savedCourses) availableCourses = JSON.parse(savedCourses);
+        if (savedRooms) availableRooms = JSON.parse(savedRooms);
+      }
 
       populateDropdowns();
       renderOrganizeLists();
     }
 
-    function saveDynamicLists() {
+    async function saveDynamicLists() {
+      // Save locally as backup
       localStorage.setItem('examnet_courses', JSON.stringify(availableCourses));
       localStorage.setItem('examnet_rooms', JSON.stringify(availableRooms));
+
+      // Save to Supabase cloud if connected
+      if (supabaseClient) {
+        try {
+          await supabaseClient.from('exam_config').upsert([
+            { key: 'courses', value: availableCourses },
+            { key: 'rooms', value: availableRooms }
+          ], { onConflict: 'key' });
+        } catch (err) {
+          console.error("Failed to sync config to Supabase:", err);
+        }
+      }
+
       populateDropdowns();
       renderOrganizeLists();
     }
@@ -713,11 +759,13 @@ create policy "Allow public deletes" on exam_registrations for delete using (tru
       const editCourse = document.getElementById('edit-course');
       const filterCourse = document.getElementById('filter-course');
 
+      if (!regCourse) return;
+
       const courseOpts = availableCourses.map(c => `<option value="${c}">${c}</option>`).join('');
       
       regCourse.innerHTML = `<option value="" disabled selected>Select your course</option>` + courseOpts;
-      editCourse.innerHTML = courseOpts;
-      filterCourse.innerHTML = `<option value="ALL">All Courses</option>` + courseOpts;
+      if (editCourse) editCourse.innerHTML = courseOpts;
+      if (filterCourse) filterCourse.innerHTML = `<option value="ALL">All Courses</option>` + courseOpts;
 
       const regRoom = document.getElementById('reg-room');
       const editRoom = document.getElementById('edit-room');
@@ -726,12 +774,14 @@ create policy "Allow public deletes" on exam_registrations for delete using (tru
       const roomOpts = availableRooms.map(r => `<option value="${r}">${r}</option>`).join('');
 
       regRoom.innerHTML = `<option value="" disabled selected>Select room assignment</option>` + roomOpts;
-      editRoom.innerHTML = roomOpts;
-      filterRoom.innerHTML = `<option value="ALL">All Rooms</option>` + roomOpts;
+      if (editRoom) editRoom.innerHTML = roomOpts;
+      if (filterRoom) filterRoom.innerHTML = `<option value="ALL">All Rooms</option>` + roomOpts;
     }
 
     function renderOrganizeLists() {
       const courseContainer = document.getElementById('courses-list-container');
+      if (!courseContainer) return;
+
       courseContainer.innerHTML = availableCourses.map((c, i) => `
         <div class="flex items-center justify-between bg-gray-800/80 px-3 py-1.5 rounded-lg text-xs">
           <span class="font-medium text-gray-200">${c}</span>
@@ -829,8 +879,8 @@ create policy "Allow public deletes" on exam_registrations for delete using (tru
 
     // --- SUPABASE CLIENT SETUP ---
     function initSupabaseConnection() {
-  	const url = localStorage.getItem('examnet_sp_url') || 'https://btlqfacbxdilyaejcywf.supabase.co';
-  	const key = localStorage.getItem('examnet_sp_key') || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ0bHFmYWNieGRpbHlhZWpjeXdmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTM2MTkzNzEsImV4cCI6MjEwOTE5NTM3MX0.VOprGy2aPUeQkDX2feiXeJgzLbDbdD13I9DNcJMHPxw';
+      const url = localStorage.getItem('examnet_sp_url') || 'https://btlqfacbxdilyaejcywf.supabase.co';
+      const key = localStorage.getItem('examnet_sp_key') || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ0bHFmYWNieGRpbHlhZWpjeXdmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTM2MTkzNzEsImV4cCI6MjEwOTE5NTM3MX0.VOprGy2aPUeQkDX2feiXeJgzLbDbdD13I9DNcJMHPxw';
 
       const badgeDot = document.getElementById('status-dot');
       const badgeText = document.getElementById('status-text');
@@ -852,6 +902,9 @@ create policy "Allow public deletes" on exam_registrations for delete using (tru
       } else {
         fallbackToLocal();
       }
+
+      // Load configuration lists after initializing client
+      loadDynamicLists();
     }
 
     function fallbackToLocal() {
@@ -860,6 +913,7 @@ create policy "Allow public deletes" on exam_registrations for delete using (tru
       document.getElementById('status-text').innerText = "LocalStorage Mode";
       const statSync = document.getElementById('stat-sync');
       if (statSync) statSync.innerText = "LocalStorage (Offline)";
+      loadDynamicLists();
     }
 
     function saveSupabaseSettings() {
