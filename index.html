@@ -122,14 +122,14 @@
                 <input
                   type="text"
                   id="reg-studentid"
-                  required
+                  readonly
+                  tabindex="-1"
                   maxlength="4"
                   autocomplete="off"
-                  autocapitalize="characters"
-                  spellcheck="false"
-                  placeholder="0A01"
-                  oninput="handleStudentIdInput(this)"
-                  class="flex-1 min-w-0 bg-transparent pl-1 pr-3 py-3 font-mono text-sm uppercase tracking-widest text-white placeholder-gray-500 focus:outline-none"
+                  inputmode="none"
+                  placeholder="Tap Generate"
+                  title="This ID can only be created with the Generate button"
+                  class="flex-1 min-w-0 bg-transparent pl-1 pr-3 py-3 font-mono text-sm uppercase tracking-widest text-white placeholder-gray-500 focus:outline-none cursor-default select-all"
                 />
               </div>
               <button type="button" id="generate-id-btn" onclick="generateStudentId()" class="shrink-0 px-4 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 disabled:opacity-50 text-indigo-300 border border-indigo-500/30 font-semibold text-xs transition flex items-center gap-1.5">
@@ -139,7 +139,7 @@
             </div>
             <p class="text-xs text-gray-500 mt-1.5 flex items-start gap-1">
               <i data-lucide="info" class="w-3 h-3 mt-0.5 shrink-0"></i>
-              <span>Format <span id="studentid-example" class="font-mono text-gray-400"></span>: 4 letters or digits, no spaces. Type your own or tap Generate, and remember it.</span>
+              <span>Tap <b class="text-gray-300">Generate</b> to get your own ID (like <span id="studentid-example" class="font-mono text-gray-400"></span>). It cannot be typed. Tap again for a different one, and remember it.</span>
             </p>
           </div>
 
@@ -691,7 +691,6 @@ create unique index if not exists exam_registrations_student_id_key
     let isUsernameAvailable = false;
     let usernameDebounceTimer = null;
     let isStudentIdAvailable = false;
-    let studentIdDebounceTimer = null;
 
     // Configurable Dynamic Lists
     let availableCourses = ["BSIT", "BSCS", "BSIS", "BSEMC", "BSCPE"];
@@ -1130,45 +1129,11 @@ create unique index if not exists exam_registrations_student_id_key
       }
     }
 
-    function handleStudentIdInput(input) {
-      let value = input.value.toUpperCase();
-
-      // Pasted a full ID such as 2026-0A01: keep only the part after the year.
-      const pasted = value.match(/^\s*(\d{4})\s*-\s*(.*)$/);
-      if (pasted) {
-        if (pasted[1] !== String(CURRENT_YEAR)) {
-          input.value = '';
-          isStudentIdAvailable = false;
-          setStudentIdBadge('taken', `Must start with ${CURRENT_YEAR}-`);
-          return;
-        }
-        value = pasted[2];
-      }
-
-      value = value.replace(/[^A-Z0-9]/g, '').slice(0, 4);
-      input.value = value;
-      isStudentIdAvailable = false;
-      clearTimeout(studentIdDebounceTimer);
-
-      if (value.length < 4) {
-        setStudentIdBadge(value.length ? 'checking' : null, `${value.length}/4 characters`);
-        const badge = document.getElementById('studentid-status-badge');
-        if (value.length) badge.classList.remove('animate-pulse');
-        return;
-      }
-
-      setStudentIdBadge('checking', 'Checking...');
-      studentIdDebounceTimer = setTimeout(async () => {
-        const result = await lookupStudentId(STUDENT_ID_PREFIX + value);
-        if (input.value === value) applyStudentIdResult(result);   // ignore stale answers
-      }, 300);
-    }
-
     async function generateStudentId() {
       const input = document.getElementById('reg-studentid');
       const btn = document.getElementById('generate-id-btn');
       btn.disabled = true;
-      clearTimeout(studentIdDebounceTimer);
+      isStudentIdAvailable = false;
       setStudentIdBadge('checking', 'Generating...');
 
       let chosen = null;
@@ -1255,13 +1220,13 @@ create unique index if not exists exam_registrations_student_id_key
       const course = document.getElementById('reg-course').value;
       const room = document.getElementById('reg-room').value;
 
-      if (!STUDENT_ID_REGEX.test(studentId)) {
-        alert(`Student ID must look like ${STUDENT_ID_PREFIX}0A01: the year, a dash, then 4 letters or digits with no spaces.`);
+      if (!document.getElementById('reg-studentid').value) {
+        alert('Please tap the Generate button to get your Student ID first.');
         return;
       }
 
-      if (!isStudentIdAvailable) {
-        alert('That Student ID is already taken or still being checked. Tap Generate or type a different one.');
+      if (!STUDENT_ID_REGEX.test(studentId) || !isStudentIdAvailable) {
+        alert('Your Student ID could not be confirmed. Please tap Generate to get a new one.');
         return;
       }
 
