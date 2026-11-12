@@ -130,6 +130,7 @@
               <i data-lucide="info" class="w-3.5 h-3.5 mt-0.5 shrink-0"></i>
               <span>Saved as: <span id="fullname-preview" class="font-mono font-bold text-white break-words">&mdash;</span></span>
             </p>
+            <p id="name-dup-status" class="hidden mt-2 text-xs font-semibold rounded-lg px-3 py-2 border" role="alert"></p>
             <!-- Combined value used by the rest of the portal (DB + Excel) -->
             <input type="hidden" id="reg-fullname" />
           </div>
@@ -640,7 +641,13 @@ alter table exam_registrations drop constraint if exists exam_registrations_stud
 alter table exam_registrations add constraint exam_registrations_student_id_format
   check (student_id is null or student_id ~ '^[0-9]{4}-[A-Z0-9]{4}$');
 create unique index if not exists exam_registrations_student_id_key
-  on exam_registrations (student_id);</pre>
+  on exam_registrations (student_id);
+
+-- OPTIONAL (strict): block the same name twice in the same room at the
+-- database level. If this errors, you already have duplicate records:
+-- delete them first, then run it again.
+create unique index if not exists exam_registrations_name_room_key
+  on exam_registrations (upper(trim(full_name)), room_number);</pre>
         </div>
 
         <div class="flex items-center justify-end space-x-3 pt-2">
@@ -1186,6 +1193,7 @@ create unique index if not exists exam_registrations_student_id_key
     function friendlyDbError(error, action) {
       const msg = `${error.message || ''} ${error.details || ''}`;
       if (error.code === '23505' || /duplicate key/i.test(msg)) {
+        if (/name_room/i.test(msg)) return 'This name is already registered in that room.';
         if (/student_id/i.test(msg)) {
           isStudentIdAvailable = false;
           setStudentIdBadge('taken', 'ID Taken');
@@ -1276,6 +1284,7 @@ create unique index if not exists exam_registrations_student_id_key
       const v = buildFullName();
       document.getElementById('reg-fullname').value = v;
       document.getElementById('fullname-preview').textContent = v || '\u2014';
+      scheduleNameDupCheck();
     }
 
     function showNameError(msg, focusEl) {
@@ -1315,9 +1324,82 @@ create unique index if not exists exam_registrations_student_id_key
         refreshFullName();
       });
       document.getElementById('reg-suffix').addEventListener('change', refreshFullName);
+      document.getElementById('reg-room').addEventListener('change', scheduleNameDupCheck);
       refreshFullName();
     }
     document.addEventListener('DOMContentLoaded', initNameField);
+
+
+    // --- DUPLICATE NAME CHECK (same name + same room) ---
+    let nameDupSeq = 0;
+    let nameDupTimer = null;
+
+    // Order/case/punctuation-insensitive key: "DELA CRUZ, JUAN C." == "Juan C. Dela Cruz"
+    function nameKey(n) {
+      return (n || '').toUpperCase().replace(/[^\p{L}\s]/gu, ' ').split(/\s+/).filter(Boolean).sort().join(' ');
+    }
+
+    // Returns { match, verified }. match = the existing record with the same name in that room.
+    async function findNameDuplicate(fullName, room, excludeId) {
+      const key = nameKey(fullName);
+      if (!key || !room) return { match: null, verified: true };
+      let rows;
+      if (supabaseClient) {
+        try {
+          const { data, error } = await supabaseClient
+            .from('exam_registrations')
+            .select('id, full_name')
+            .eq('room_number', room);
+          if (error || !data) return { match: null, verified: false };
+          rows = data;
+        } catch (e) {
+          return { match: null, verified: false };
+        }
+      } else {
+        rows = JSON.parse(localStorage.getItem('examnet_students') || '[]').filter(s => s.room_number === room);
+      }
+      const match = rows.find(r => r.id !== excludeId && nameKey(r.full_name) === key) || null;
+      return { match, verified: true };
+    }
+
+    function setNameDupStatus(kind, text) {
+      const box = document.getElementById('name-dup-status');
+      if (!kind) { box.classList.add('hidden'); box.textContent = ''; return; }
+      const styles = {
+        checking: 'bg-gray-800 text-gray-400 border-gray-700 animate-pulse',
+        ok:       'bg-emerald-500/10 text-emerald-400 border-emerald-500/30',
+        warn:     'bg-amber-500/10 text-amber-400 border-amber-500/30',
+        dup:      'bg-red-500/10 text-red-400 border-red-500/40'
+      };
+      box.className = 'mt-2 text-xs font-semibold rounded-lg px-3 py-2 border ' + styles[kind];
+      box.textContent = text;
+    }
+
+    function scheduleNameDupCheck() {
+      clearTimeout(nameDupTimer);
+      nameDupTimer = setTimeout(runNameDupCheck, 350);
+    }
+
+    async function runNameDupCheck() {
+      const seq = ++nameDupSeq;
+      const room = document.getElementById('reg-room').value;
+      const full = document.getElementById('reg-fullname').value;
+      const last = tidyName(document.getElementById('reg-lastname').value);
+      const first = tidyName(document.getElementById('reg-firstname').value);
+      if (last.length < 2 || first.length < 2 || !room) { setNameDupStatus(null); return; }
+
+      setNameDupStatus('checking', 'Checking if this name is already registered in ' + room + '...');
+      const res = await findNameDuplicate(full, room, null);
+      if (seq !== nameDupSeq) return;   // a newer check replaced this one
+
+      if (res.match) {
+        setNameDupStatus('dup', 'Already registered: ' + res.match.full_name + ' is already in ' + room + '. You cannot register twice in the same room.');
+      } else if (!res.verified) {
+        setNameDupStatus('warn', 'Could not verify duplicates right now. The system will check again when you submit.');
+      } else {
+        setNameDupStatus('ok', 'No duplicate found in ' + room + '.');
+      }
+    }
 
 
     // --- STUDENT SUBMISSION WORKFLOW ---
@@ -1330,6 +1412,13 @@ create unique index if not exists exam_registrations_student_id_key
       const studentId = STUDENT_ID_PREFIX + document.getElementById('reg-studentid').value.trim().toUpperCase();
       const course = document.getElementById('reg-course').value;
       const room = document.getElementById('reg-room').value;
+
+      const dupRes = await findNameDuplicate(fullName, room, null);
+      if (dupRes.match) {
+        setNameDupStatus('dup', 'Already registered: ' + dupRes.match.full_name + ' is already in ' + room + '. You cannot register twice in the same room.');
+        document.getElementById('name-dup-status').scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return;
+      }
 
       if (!document.getElementById('reg-studentid').value) {
         alert('Please tap the Generate button to get your Student ID first.');
@@ -1449,6 +1538,15 @@ create unique index if not exists exam_registrations_student_id_key
         return;
       }
       const studentId = studentIdRaw || null;
+
+      const before = studentsData.find(s => s.id === id);
+      if (!before || nameKey(before.full_name) !== nameKey(fullName) || before.room_number !== room) {
+        const dupEdit = await findNameDuplicate(fullName, room, id);
+        if (dupEdit.match) {
+          alert(dupEdit.match.full_name + ' is already registered in ' + room + '. Change the name or the room.');
+          return;
+        }
+      }
 
       if (supabaseClient) {
         try {
