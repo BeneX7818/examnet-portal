@@ -96,15 +96,42 @@
         <!-- Form -->
         <form id="student-form" onsubmit="handleStudentSubmit(event)" class="space-y-5">
           
-          <!-- Full Name -->
-          <div>
+          <!-- Full Name (Last, First, M.I., Suffix) -->
+          <div id="name-field">
             <label class="block text-xs font-bold text-gray-300 uppercase tracking-wider mb-2">Full Name</label>
-            <div class="relative">
-              <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-400">
-                <i data-lucide="user" class="w-4 h-4"></i>
-              </span>
-              <input type="text" id="reg-fullname" required placeholder="Juan Dela Cruz" class="w-full pl-10 pr-4 py-3 rounded-xl glass-input text-sm focus:outline-none transition" />
+            <div class="space-y-3">
+              <div class="relative">
+                <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-400">
+                  <i data-lucide="user" class="w-4 h-4"></i>
+                </span>
+                <input type="text" id="reg-lastname" maxlength="40" autocomplete="family-name" placeholder="Last name (e.g. Dela Cruz)" aria-label="Last name" class="w-full pl-10 pr-4 py-3 rounded-xl glass-input text-sm uppercase placeholder:normal-case focus:outline-none transition" />
+              </div>
+              <div class="relative">
+                <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-400">
+                  <i data-lucide="user" class="w-4 h-4"></i>
+                </span>
+                <input type="text" id="reg-firstname" maxlength="40" autocomplete="given-name" placeholder="First name (e.g. Juan)" aria-label="First name" class="w-full pl-10 pr-4 py-3 rounded-xl glass-input text-sm uppercase placeholder:normal-case focus:outline-none transition" />
+              </div>
+              <div class="flex gap-3">
+                <input type="text" id="reg-middleinit" maxlength="2" autocomplete="off" placeholder="M.I." aria-label="Middle initial (optional)" class="w-20 shrink-0 px-3 py-3 rounded-xl glass-input text-sm text-center uppercase placeholder:normal-case focus:outline-none transition" />
+                <select id="reg-suffix" aria-label="Suffix (optional)" class="flex-1 min-w-0 px-3.5 py-3 rounded-xl glass-input text-sm focus:outline-none transition bg-gray-800">
+                  <option value="">Suffix (optional)</option>
+                  <option value="JR.">JR.</option>
+                  <option value="SR.">SR.</option>
+                  <option value="II">II</option>
+                  <option value="III">III</option>
+                  <option value="IV">IV</option>
+                  <option value="V">V</option>
+                </select>
+              </div>
             </div>
+            <p id="fullname-error" class="hidden mt-2 text-xs text-red-400" role="alert"></p>
+            <p class="mt-2 text-xs text-gray-400 flex items-start gap-1.5">
+              <i data-lucide="info" class="w-3.5 h-3.5 mt-0.5 shrink-0"></i>
+              <span>Saved as: <span id="fullname-preview" class="font-mono font-bold text-white break-words">&mdash;</span></span>
+            </p>
+            <!-- Combined value used by the rest of the portal (DB + Excel) -->
+            <input type="hidden" id="reg-fullname" />
           </div>
 
           <!-- Student ID (self-generated: YEAR-XXXX) -->
@@ -391,7 +418,8 @@
 
         <div>
           <label class="block text-xs font-semibold text-gray-300 mb-1">Full Name</label>
-          <input type="text" id="edit-fullname" required class="w-full px-3.5 py-2.5 rounded-xl glass-input text-xs" />
+          <input type="text" id="edit-fullname" required oninput="enforceUpperName(this)" placeholder="LAST NAME, FIRST NAME M. SUFFIX" class="w-full px-3.5 py-2.5 rounded-xl glass-input text-xs uppercase placeholder:normal-case" />
+          <p class="mt-1 text-[11px] text-gray-500">Format: LAST NAME, FIRST NAME M. SUFFIX (e.g. DELA CRUZ, JUAN C. JR.)</p>
         </div>
 
         <div>
@@ -1210,10 +1238,93 @@ create unique index if not exists exam_registrations_student_id_key
     }
 
 
+    // --- FULL NAME FIELD: LAST, FIRST M. SUFFIX (all caps) ---
+    const NAME_BAD_CHARS = /[^\p{L}\s'\u2019.\-]/gu;
+
+    function tidyName(v) {
+      return (v || '').toUpperCase().replace(NAME_BAD_CHARS, '').replace(/\s+/g, ' ').trim();
+    }
+
+    // Uppercase + strip invalid characters while typing, keeping the caret in place
+    function enforceUpperName(el) {
+      const pos = el.selectionStart;
+      const before = el.value;
+      const after = before.toUpperCase().replace(/[^\p{L}\s'\u2019.,\-]/gu, '').replace(/\s{2,}/g, ' ').replace(/^\s+/, '');
+      if (after !== before) {
+        el.value = after;
+        const np = Math.max(0, pos - (before.length - after.length));
+        try { el.setSelectionRange(np, np); } catch (e) {}
+      }
+    }
+
+    function getMiddleInitial() {
+      const m = (document.getElementById('reg-middleinit').value.match(/\p{L}/u) || [''])[0].toUpperCase();
+      return m ? m + '.' : '';
+    }
+
+    // Builds e.g. "DELA CRUZ, JUAN C. JR."
+    function buildFullName() {
+      const last = tidyName(document.getElementById('reg-lastname').value);
+      const first = tidyName(document.getElementById('reg-firstname').value);
+      const suffix = document.getElementById('reg-suffix').value;
+      if (!last && !first) return '';
+      return [(last && first) ? last + ',' : last, first, getMiddleInitial(), suffix]
+        .filter(Boolean).join(' ').replace(/,\s*$/, '');
+    }
+
+    function refreshFullName() {
+      const v = buildFullName();
+      document.getElementById('reg-fullname').value = v;
+      document.getElementById('fullname-preview').textContent = v || '\u2014';
+    }
+
+    function showNameError(msg, focusEl) {
+      const box = document.getElementById('fullname-error');
+      box.textContent = msg;
+      box.classList.toggle('hidden', !msg);
+      ['reg-lastname', 'reg-firstname'].forEach(id => {
+        document.getElementById(id).classList.toggle('border-red-500', !!msg && document.getElementById(id) === focusEl);
+      });
+      if (msg && focusEl) focusEl.focus();
+    }
+
+    function validateFullName() {
+      const lastEl = document.getElementById('reg-lastname');
+      const firstEl = document.getElementById('reg-firstname');
+      if (tidyName(lastEl.value).length < 2) { showNameError('Please enter your last name.', lastEl); return false; }
+      if (tidyName(firstEl.value).length < 2) { showNameError('Please enter your first name.', firstEl); return false; }
+      showNameError('', null);
+      refreshFullName();
+      return true;
+    }
+
+    function initNameField() {
+      ['reg-lastname', 'reg-firstname'].forEach(id => {
+        const el = document.getElementById(id);
+        el.addEventListener('input', () => {
+          enforceUpperName(el);
+          el.value = el.value.replace(/,/g, '');   // no commas: the app adds the comma itself
+          showNameError('', null);
+          refreshFullName();
+        });
+        el.addEventListener('blur', () => { el.value = tidyName(el.value); refreshFullName(); });
+      });
+      const mi = document.getElementById('reg-middleinit');
+      mi.addEventListener('input', () => {
+        mi.value = (mi.value.match(/\p{L}/u) || [''])[0].toUpperCase();   // one letter only
+        refreshFullName();
+      });
+      document.getElementById('reg-suffix').addEventListener('change', refreshFullName);
+      refreshFullName();
+    }
+    document.addEventListener('DOMContentLoaded', initNameField);
+
+
     // --- STUDENT SUBMISSION WORKFLOW ---
     async function handleStudentSubmit(e) {
       e.preventDefault();
 
+      if (!validateFullName()) return;
       const fullName = document.getElementById('reg-fullname').value.trim();
       const username = document.getElementById('reg-username').value.trim();
       const studentId = STUDENT_ID_PREFIX + document.getElementById('reg-studentid').value.trim().toUpperCase();
@@ -1287,6 +1398,7 @@ create unique index if not exists exam_registrations_student_id_key
       }
 
       document.getElementById('student-form').reset();
+      refreshFullName();
       document.getElementById('username-status-badge').classList.add('hidden');
       isUsernameAvailable = false;
       setStudentIdBadge(null);
@@ -1326,7 +1438,7 @@ create unique index if not exists exam_registrations_student_id_key
       e.preventDefault();
 
       const id = document.getElementById('edit-student-id').value;
-      const fullName = document.getElementById('edit-fullname').value.trim();
+      const fullName = document.getElementById('edit-fullname').value.toUpperCase().replace(/\s+/g, ' ').trim();
       const username = document.getElementById('edit-username').value.trim().replace(/\s+/g, '');
       const course = document.getElementById('edit-course').value;
       const room = document.getElementById('edit-room').value;
