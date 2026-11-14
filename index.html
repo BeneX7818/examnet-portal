@@ -8,8 +8,8 @@
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
   
-  <!-- SheetJS (XLSX) for Multi-Sheet Excel Export -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <!-- SheetJS (XLSX) for Multi-Sheet Excel Export (xlsx-js-style = same API + cell styling) -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
   
   <!-- Supabase JS Client -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -1667,6 +1667,50 @@ create unique index if not exists exam_registrations_name_room_key
     }
 
 
+    // --- EXCEL STYLING HELPERS (header look matches the import template) ---
+    const XL_HEADER_BG = "3B5BDB";
+    const XL_BORDER = { style: "thin", color: { rgb: "B8C4EE" } };
+    const XL_BORDERS = { top: XL_BORDER, bottom: XL_BORDER, left: XL_BORDER, right: XL_BORDER };
+
+    // Styles one header row (blue fill, bold white centered text) plus the data rows below it.
+    function styleTableRange(ws, headerRow, firstCol, lastCol, lastRow) {
+      for (let r = headerRow; r <= lastRow; r++) {
+        for (let c = firstCol; c <= lastCol; c++) {
+          const ref = XLSX.utils.encode_cell({ r, c });
+          if (!ws[ref]) ws[ref] = { t: "s", v: "" };
+          ws[ref].s = (r === headerRow)
+            ? {
+                font: { bold: true, color: { rgb: "FFFFFF" }, name: "Calibri", sz: 11 },
+                fill: { patternType: "solid", fgColor: { rgb: XL_HEADER_BG } },
+                alignment: { horizontal: "center", vertical: "center" },
+                border: XL_BORDERS
+              }
+            : {
+                font: { name: "Calibri", sz: 11 },
+                alignment: { vertical: "center" },
+                border: XL_BORDERS
+              };
+        }
+      }
+    }
+
+    // Table sheets (Master List and room sheets): header on row 0, widths fit the content.
+    function styleTableSheet(ws) {
+      const range = XLSX.utils.decode_range(ws['!ref']);
+      styleTableRange(ws, 0, range.s.c, range.e.c, range.e.r);
+      const widths = [];
+      for (let c = range.s.c; c <= range.e.c; c++) {
+        let max = 8;
+        for (let r = range.s.r; r <= range.e.r; r++) {
+          const cell = ws[XLSX.utils.encode_cell({ r, c })];
+          if (cell && cell.v != null) max = Math.max(max, String(cell.v).length);
+        }
+        widths.push({ wch: Math.min(max + 4, 45) });
+      }
+      ws['!cols'] = widths;
+      ws['!rows'] = [{ hpt: 24 }];
+    }
+
     // --- MULTI-SHEET EXCEL EXPORT ENGINE (SHEETJS) ---
     function exportMultiSheetExcel() {
       if (studentsData.length === 0) {
@@ -1700,6 +1744,17 @@ create unique index if not exists exam_registrations_name_room_key
       Object.entries(roomCounts).forEach(([rm, cnt]) => summaryData.push([rm, cnt]));
 
       const summarySheet = XLSX.utils.aoa_to_sheet(summaryData);
+      // Style: bold title, then each breakdown table (header row + rows) like the other sheets
+      summarySheet['A1'].s = { font: { bold: true, sz: 14, name: "Calibri" } };
+      const courseCount = Object.keys(courseCounts).length;
+      const roomCount = Object.keys(roomCounts).length;
+      const courseHeaderRow = 5; // "Course" | "Total Students"
+      styleTableRange(summarySheet, courseHeaderRow, 0, 1, courseHeaderRow + courseCount);
+      const roomHeaderRow = courseHeaderRow + courseCount + 3; // after blank row + section title
+      styleTableRange(summarySheet, roomHeaderRow, 0, 1, roomHeaderRow + roomCount);
+      summarySheet['A5'].s = { font: { bold: true, sz: 12, name: "Calibri" } };
+      summarySheet[XLSX.utils.encode_cell({ r: roomHeaderRow - 1, c: 0 })].s = { font: { bold: true, sz: 12, name: "Calibri" } };
+      summarySheet['!cols'] = [{ wch: 34 }, { wch: 28 }];
       XLSX.utils.book_append_sheet(wb, summarySheet, "Overall Summary");
 
       // 2. MASTER LIST SHEET
@@ -1714,6 +1769,7 @@ create unique index if not exists exam_registrations_name_room_key
         "Registration Timestamp": new Date(s.created_at).toLocaleString()
       }));
       const masterSheet = XLSX.utils.json_to_sheet(masterRows);
+      styleTableSheet(masterSheet);
       XLSX.utils.book_append_sheet(wb, masterSheet, "Master List");
 
       // 3. GROUPED ROOM & COURSE SHEETS
@@ -1736,6 +1792,7 @@ create unique index if not exists exam_registrations_name_room_key
         }));
 
         const sheet = XLSX.utils.json_to_sheet(sheetRows);
+        styleTableSheet(sheet);
         const safeSheetName = groupKey.replace(/[:\\/?*\[\]]/g, "").substring(0, 30);
         XLSX.utils.book_append_sheet(wb, sheet, safeSheetName);
       });
