@@ -135,7 +135,7 @@
             <input type="hidden" id="reg-fullname" />
           </div>
 
-          <!-- Student ID (self-generated: YEAR-XXXX) -->
+          <!-- Student ID (self-generated: YEAR-A###) -->
           <div>
             <div class="flex items-center justify-between mb-2">
               <label for="reg-studentid" class="block text-xs font-bold text-gray-300 uppercase tracking-wider">Student ID</label>
@@ -425,7 +425,7 @@
 
         <div>
           <label class="block text-xs font-semibold text-gray-300 mb-1">Student ID</label>
-          <input type="text" id="edit-studentid" placeholder="e.g. 2026-0A01 (leave blank if none)" autocomplete="off" class="w-full px-3.5 py-2.5 rounded-xl glass-input text-xs font-mono uppercase" />
+          <input type="text" id="edit-studentid" placeholder="e.g. 2026-A001 (leave blank if none)" autocomplete="off" class="w-full px-3.5 py-2.5 rounded-xl glass-input text-xs font-mono uppercase" />
         </div>
 
         <div>
@@ -733,11 +733,10 @@ create unique index if not exists exam_registrations_name_room_key
 
     const CURRENT_YEAR = new Date().getFullYear();
 
-    // Student ID = "<current year>-<4 letters/digits>", e.g. 2026-0A01 (upper case, no spaces).
-    // Generated IDs skip the letters I and O so they are not mistaken for 1 and 0.
+    // Student ID = "<current year>-A<3 random digits>", e.g. 2026-A001 (upper case, no spaces).
+    // The validation regex stays loose so older IDs (e.g. 2026-0A01) remain valid.
     const STUDENT_ID_PREFIX = `${CURRENT_YEAR}-`;
     const STUDENT_ID_REGEX = /^\d{4}-[A-Z0-9]{4}$/;
-    const STUDENT_ID_ALPHABET = "0123456789ABCDEFGHJKLMNPQRSTUVWXYZ";
     const DEFAULT_PASS_PATTERN = `ZDSPGC@${CURRENT_YEAR}`;
     
     // Obfuscated default fallback credentials ("superadmin" encoded to base64)
@@ -1108,13 +1107,14 @@ create unique index if not exists exam_registrations_name_room_key
     // --- STUDENT ID (self-generated: YEAR-XXXX) ---
     function initStudentIdField() {
       document.getElementById('studentid-prefix').innerText = STUDENT_ID_PREFIX;
-      document.getElementById('studentid-example').innerText = STUDENT_ID_PREFIX + '0A01';
+      document.getElementById('studentid-example').innerText = STUDENT_ID_PREFIX + 'A001';
     }
 
     function randomStudentIdSuffix() {
-      const buf = new Uint32Array(4);
+      // "A" followed by 3 random digits (000-999), e.g. A001, A427
+      const buf = new Uint32Array(1);
       crypto.getRandomValues(buf);
-      return Array.from(buf, n => STUDENT_ID_ALPHABET[n % STUDENT_ID_ALPHABET.length]).join('');
+      return 'A' + String(buf[0] % 1000).padStart(3, '0');
     }
 
     function setStudentIdBadge(kind, text) {
@@ -1173,7 +1173,7 @@ create unique index if not exists exam_registrations_name_room_key
 
       let chosen = null;
       let result = 'unknown';
-      for (let i = 0; i < 8; i++) {
+      for (let i = 0; i < 20; i++) {
         const candidate = randomStudentIdSuffix();
         result = await lookupStudentId(STUDENT_ID_PREFIX + candidate);
         if (result !== 'taken') { chosen = candidate; break; }
@@ -1202,7 +1202,7 @@ create unique index if not exists exam_registrations_name_room_key
         if (/username/i.test(msg)) return 'That username was just taken. Please choose another.';
       }
       if (error.code === '23514' || /student_id_format/i.test(msg)) {
-        return `Student ID must look like ${STUDENT_ID_PREFIX}0A01 (4 capital letters or digits).`;
+        return `Student ID must look like ${STUDENT_ID_PREFIX}A001 (the letter A followed by 3 digits).`;
       }
       if (/student_id/i.test(msg) && /(column|schema cache)/i.test(msg)) {
         return 'Your Supabase table does not have the student_id column yet. Open Admin > Supabase Settings, copy the SQL, run the "ALREADY HAVE THE TABLE" block in the Supabase SQL Editor, then try again.';
@@ -1534,7 +1534,7 @@ create unique index if not exists exam_registrations_name_room_key
 
       const studentIdRaw = document.getElementById('edit-studentid').value.trim().toUpperCase().replace(/\s+/g, '');
       if (studentIdRaw && !STUDENT_ID_REGEX.test(studentIdRaw)) {
-        alert('Student ID must look like 2026-0A01: a 4-digit year, a dash, then 4 letters or digits.');
+        alert('Student ID must look like 2026-A001: a 4-digit year, a dash, the letter A, then 3 digits.');
         return;
       }
       const studentId = studentIdRaw || null;
