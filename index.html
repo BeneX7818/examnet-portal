@@ -327,6 +327,12 @@
             <i data-lucide="database" class="w-4 h-4 text-blue-400"></i>
             Supabase Settings
           </button>
+
+          <!-- Reset All Data (admin password required) -->
+          <button onclick="openResetModal()" id="reset-open-btn" class="px-3.5 py-2.5 rounded-xl bg-red-600/10 hover:bg-red-600/25 text-red-300 border border-red-500/30 font-semibold text-xs transition flex items-center gap-1.5">
+            <i data-lucide="trash-2" class="w-4 h-4"></i>
+            Reset Data
+          </button>
         </div>
       </div>
 
@@ -621,6 +627,59 @@
 
 
   <!-- ========================================== -->
+  <!-- MODAL: RESET ALL DATA -->
+  <!-- ========================================== -->
+  <div id="reset-modal" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="glass-card w-full max-w-md rounded-2xl p-6 relative space-y-4 max-h-[90vh] overflow-y-auto">
+      <button type="button" onclick="closeResetModal()" class="absolute top-4 right-4 text-gray-400 hover:text-white">
+        <i data-lucide="x" class="w-5 h-5"></i>
+      </button>
+
+      <div class="flex items-center space-x-3">
+        <div class="w-10 h-10 rounded-xl bg-red-500/10 text-red-400 flex items-center justify-center border border-red-500/20">
+          <i data-lucide="trash-2" class="w-5 h-5"></i>
+        </div>
+        <div>
+          <h3 class="text-lg font-bold text-white">Reset All Data</h3>
+          <p class="text-xs text-gray-400">Wipe the system clean for a new exam batch</p>
+        </div>
+      </div>
+
+      <div class="rounded-xl border border-red-500/30 bg-red-500/10 px-3.5 py-3 text-xs text-red-200 leading-relaxed">
+        <p class="font-bold">This permanently deletes <span id="reset-count">0</span> examinee record(s).</p>
+        <p class="mt-1 opacity-90">Kept: the admin password and your Supabase connection settings. This cannot be undone.</p>
+      </div>
+
+      <div class="space-y-2.5 text-xs text-gray-300">
+        <label class="flex items-start gap-2.5 cursor-pointer">
+          <input type="checkbox" id="reset-backup" checked class="mt-0.5 accent-emerald-500" />
+          <span><span class="font-semibold text-white">Download Excel backup first</span> (recommended). The reset stops if the backup fails.</span>
+        </label>
+        <label class="flex items-start gap-2.5 cursor-pointer">
+          <input type="checkbox" id="reset-config" checked class="mt-0.5 accent-red-500" />
+          <span><span class="font-semibold text-white">Also reset Rooms &amp; Courses and Registration Deadline</span> to defaults. Untick to keep your current lists and deadline.</span>
+        </label>
+      </div>
+
+      <form onsubmit="handleResetAllData(event)" class="space-y-3">
+        <div>
+          <label class="block text-xs font-semibold text-gray-300 mb-1">Admin Password</label>
+          <input type="password" id="reset-pass" required autocomplete="off" placeholder="Enter admin password to proceed" class="w-full px-3.5 py-2.5 rounded-xl glass-input text-xs" />
+          <p id="reset-error" class="hidden mt-1.5 text-[11px] text-red-400 font-semibold"></p>
+        </div>
+
+        <p id="reset-progress" class="hidden text-[11px] text-sky-300 font-semibold"></p>
+
+        <div class="flex items-center justify-end space-x-2 pt-1">
+          <button type="button" id="reset-cancel-btn" onclick="closeResetModal()" class="px-4 py-2 rounded-xl bg-gray-800 text-gray-300 text-xs font-semibold">Cancel</button>
+          <button type="submit" id="reset-submit-btn" class="px-5 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-bold shadow-lg shadow-red-600/30 disabled:opacity-50 disabled:cursor-not-allowed">Reset Everything</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+
+  <!-- ========================================== -->
   <!-- MODAL 4: SUPABASE CONFIGURATION -->
   <!-- ========================================== -->
   <div id="supabase-modal" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
@@ -814,8 +873,10 @@ create policy "Insert only while registration open" on exam_registrations
     let isStudentIdAvailable = false;
 
     // Configurable Dynamic Lists
-    let availableCourses = ["BSIT", "BSCS", "BSIS", "BSEMC", "BSCPE"];
-    let availableRooms = ["Room 101", "Room 102", "Room 103", "Lab A", "Lab B"];
+    const DEFAULT_COURSES = ["BSIT", "BSCS", "BSIS", "BSEMC", "BSCPE"];
+    const DEFAULT_ROOMS = ["Room 101", "Room 102", "Room 103", "Lab A", "Lab B"];
+    let availableCourses = [...DEFAULT_COURSES];
+    let availableRooms = [...DEFAULT_ROOMS];
 
     const CURRENT_YEAR = new Date().getFullYear();
 
@@ -2048,10 +2109,11 @@ create policy "Insert only while registration open" on exam_registrations
     }
 
     // --- MULTI-SHEET EXCEL EXPORT ENGINE (SHEETJS) ---
-    function exportMultiSheetExcel() {
+    function exportMultiSheetExcel(opts) {
+      opts = (opts && typeof opts === 'object' && !(opts instanceof Event)) ? opts : {};
       if (studentsData.length === 0) {
-        alert("No student records available to export!");
-        return;
+        if (!opts.silent) alert("No student records available to export!");
+        return false;
       }
 
       const wb = XLSX.utils.book_new();
@@ -2133,7 +2195,135 @@ create policy "Insert only while registration open" on exam_registrations
         XLSX.utils.book_append_sheet(wb, sheet, safeSheetName);
       });
 
-      XLSX.writeFile(wb, `ExamNet_Registrations_${new Date().toISOString().slice(0,10)}.xlsx`);
+      XLSX.writeFile(wb, `ExamNet_${opts.fileTag || 'Registrations'}_${new Date().toISOString().slice(0,10)}.xlsx`);
+      return true;
+    }
+
+
+    // --- RESET ALL DATA (admin password required) ---
+    // Wipes examinee records (and, optionally, rooms/courses + registration deadline).
+    // NEVER touches: the admin password (examnet_admin_key), the Supabase URL/key, or the admin session.
+    let resetBusy = false;
+
+    function openResetModal() {
+      document.getElementById('reset-count').innerText = studentsData.length;
+      document.getElementById('reset-pass').value = '';
+      document.getElementById('reset-backup').checked = true;
+      document.getElementById('reset-config').checked = true;
+      setResetError('');
+      setResetProgress('');
+      setResetBusy(false);
+      openModal('reset-modal');
+      setTimeout(() => document.getElementById('reset-pass').focus(), 50);
+    }
+
+    function closeResetModal() {
+      if (resetBusy) return; // don't close mid-reset
+      document.getElementById('reset-pass').value = '';
+      closeModal('reset-modal');
+    }
+
+    function setResetError(msg) {
+      const el = document.getElementById('reset-error');
+      el.textContent = msg;
+      el.classList.toggle('hidden', !msg);
+    }
+
+    function setResetProgress(msg) {
+      const el = document.getElementById('reset-progress');
+      el.textContent = msg;
+      el.classList.toggle('hidden', !msg);
+    }
+
+    function setResetBusy(busy) {
+      resetBusy = busy;
+      document.getElementById('reset-submit-btn').disabled = busy;
+      document.getElementById('reset-cancel-btn').disabled = busy;
+      document.getElementById('reset-pass').disabled = busy;
+    }
+
+    async function handleResetAllData(e) {
+      e.preventDefault();
+      if (resetBusy) return;
+      setResetError('');
+
+      // 1) Admin password gate
+      const typed = document.getElementById('reset-pass').value;
+      if (typed !== getStoredAdminPassword()) {
+        document.getElementById('reset-pass').value = '';
+        setResetError('Incorrect admin password. Nothing was deleted.');
+        return;
+      }
+
+      const wantBackup = document.getElementById('reset-backup').checked;
+      const resetConfig = document.getElementById('reset-config').checked;
+      setResetBusy(true);
+
+      try {
+        // 2) Pull the latest records so the backup and the wipe cover everything students just submitted
+        setResetProgress('Loading the latest records...');
+        await loadRegistrations();
+
+        // 3) Backup first. If it fails, stop before deleting anything.
+        if (wantBackup && studentsData.length > 0) {
+          setResetProgress('Downloading Excel backup...');
+          try {
+            const ok = exportMultiSheetExcel({ silent: true, fileTag: 'BACKUP_Before_Reset' });
+            if (!ok) throw new Error('Backup was not created');
+          } catch (err) {
+            console.error('Backup failed', err);
+            setResetError('Backup failed, so nothing was deleted. Untick the backup option if you really want to continue without one.');
+            setResetProgress('');
+            setResetBusy(false);
+            return;
+          }
+        }
+
+        // 4) Delete registrations
+        setResetProgress('Deleting examinee records...');
+        if (supabaseClient) {
+          const { error: delErr } = await supabaseClient.from('exam_registrations').delete().not('id', 'is', null);
+          if (delErr) throw new Error('Supabase delete error: ' + delErr.message);
+
+          // Verify. RLS can silently block deletes without returning an error.
+          const { count, error: cntErr } = await supabaseClient
+            .from('exam_registrations').select('id', { count: 'exact', head: true });
+          if (cntErr) throw new Error('Could not verify the reset: ' + cntErr.message);
+          if (count && count > 0) {
+            throw new Error(count + ' record(s) are still in Supabase. Your table may be missing the "Allow public deletes" policy (see Supabase Settings > SQL).');
+          }
+        }
+        studentsData = [];
+        saveToLocal();
+
+        // 5) Optional: rooms/courses + registration deadline back to defaults
+        if (resetConfig) {
+          setResetProgress('Resetting rooms, courses and deadline...');
+          availableCourses = [...DEFAULT_COURSES];
+          availableRooms = [...DEFAULT_ROOMS];
+          await saveDynamicLists();
+
+          regConfig = { closes_at: null, manual_closed: false };
+          document.getElementById('dl-input').value = '';
+          await saveRegistrationConfig();
+        }
+
+        // 6) Refresh the screen
+        renderTable();
+        updateMetrics();
+        setResetProgress('');
+        setResetBusy(false);
+        closeModal('reset-modal');
+        document.getElementById('reset-pass').value = '';
+        alert('Reset complete. All examinee data' + (resetConfig ? ', rooms/courses and the deadline' : '') + ' cleared. Admin password and Supabase settings were kept.');
+      } catch (err) {
+        console.error('Reset failed', err);
+        // Re-sync the screen with whatever is actually stored
+        try { await loadRegistrations(); } catch (_) {}
+        setResetProgress('');
+        setResetError(err.message || 'Reset failed.');
+        setResetBusy(false);
+      }
     }
 
 
