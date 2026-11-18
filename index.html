@@ -93,6 +93,15 @@
           <p class="text-xs sm:text-sm text-gray-400 mt-1">Ensure all details match your official student record before submitting.</p>
         </div>
 
+        <!-- Registration deadline banner (shown only when a deadline is set or registration is closed) -->
+        <div id="reg-deadline-banner" class="hidden mb-6 rounded-xl border px-4 py-3 text-xs flex items-start gap-3">
+          <i data-lucide="clock" class="w-4 h-4 shrink-0 mt-0.5"></i>
+          <div class="min-w-0">
+            <p id="reg-deadline-title" class="font-bold text-sm"></p>
+            <p id="reg-deadline-sub" class="mt-0.5 opacity-80 leading-relaxed"></p>
+          </div>
+        </div>
+
         <!-- Form -->
         <form id="student-form" onsubmit="handleStudentSubmit(event)" class="space-y-5">
           
@@ -299,6 +308,12 @@
           <button onclick="openModal('change-pass-modal')" class="px-3.5 py-2.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/20 font-semibold text-xs transition flex items-center gap-1.5">
             <i data-lucide="key-round" class="w-4 h-4"></i>
             Security
+          </button>
+
+          <!-- Registration Deadline Opener -->
+          <button onclick="openDeadlineModal()" id="deadline-open-btn" class="px-3.5 py-2.5 rounded-xl bg-sky-500/10 hover:bg-sky-500/20 text-sky-300 border border-sky-500/20 font-semibold text-xs transition flex items-center gap-1.5">
+            <i data-lucide="alarm-clock" class="w-4 h-4"></i>
+            Registration Deadline
           </button>
 
           <!-- Excel Export Button -->
@@ -568,6 +583,44 @@
 
 
   <!-- ========================================== -->
+  <!-- MODAL: REGISTRATION DEADLINE -->
+  <!-- ========================================== -->
+  <div id="deadline-modal" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="glass-card w-full max-w-md rounded-2xl p-6 relative space-y-4 max-h-[90vh] overflow-y-auto">
+      <button onclick="closeModal('deadline-modal')" class="absolute top-4 right-4 text-gray-400 hover:text-white">
+        <i data-lucide="x" class="w-5 h-5"></i>
+      </button>
+
+      <div class="flex items-center space-x-3">
+        <div class="w-10 h-10 rounded-xl bg-sky-500/10 text-sky-400 flex items-center justify-center border border-sky-500/20">
+          <i data-lucide="alarm-clock" class="w-5 h-5"></i>
+        </div>
+        <div>
+          <h3 class="text-lg font-bold text-white">Registration Deadline</h3>
+          <p class="text-xs text-gray-400">Close registration automatically at a set date and time</p>
+        </div>
+      </div>
+
+      <div id="dl-status" class="rounded-xl border px-3.5 py-3 text-xs font-semibold"></div>
+
+      <div>
+        <label class="block text-xs font-semibold text-gray-300 mb-1">Deadline (Philippine time, UTC+8)</label>
+        <input type="datetime-local" id="dl-input" style="color-scheme: dark" class="w-full px-3.5 py-2.5 rounded-xl glass-input text-xs" />
+        <p class="text-[11px] text-gray-500 mt-1.5 leading-relaxed">Saving a future deadline also reopens registration. Students cannot change this by adjusting the clock on their phone or computer.</p>
+      </div>
+
+      <div id="dl-server-note" class="text-[11px] leading-relaxed rounded-lg border px-3 py-2"></div>
+
+      <div class="grid grid-cols-2 gap-2.5 pt-1">
+        <button type="button" onclick="saveDeadline()" class="px-4 py-2.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold shadow-lg shadow-sky-600/30">Save Deadline</button>
+        <button type="button" onclick="clearDeadline()" class="px-4 py-2.5 rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-200 text-xs font-semibold border border-gray-700">Remove Deadline</button>
+        <button type="button" id="dl-toggle-btn" onclick="toggleManualClose()" class="col-span-2 px-4 py-2.5 rounded-xl text-xs font-bold border"></button>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ========================================== -->
   <!-- MODAL 4: SUPABASE CONFIGURATION -->
   <!-- ========================================== -->
   <div id="supabase-modal" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
@@ -647,7 +700,40 @@ create unique index if not exists exam_registrations_student_id_key
 -- database level. If this errors, you already have duplicate records:
 -- delete them first, then run it again.
 create unique index if not exists exam_registrations_name_room_key
-  on exam_registrations (upper(trim(full_name)), room_number);</pre>
+  on exam_registrations (upper(trim(full_name)), room_number);
+
+-- ========== REGISTRATION DEADLINE (run once) ==========
+-- Server clock + database-level lock. Nobody can bypass this by changing
+-- their device time, or by calling the API directly.
+create or replace function public.get_server_time()
+returns bigint language sql stable as $$
+  select (extract(epoch from now()) * 1000)::bigint
+$$;
+
+create or replace function public.registration_is_open()
+returns boolean language plpgsql stable security definer
+set search_path = public as $$
+declare
+  cfg jsonb;
+  closes timestamptz;
+begin
+  select value into cfg from exam_config where key = 'registration';
+  if cfg is null then return true; end if;
+  if coalesce((cfg->>'manual_closed')::boolean, false) then return false; end if;
+  closes := nullif(cfg->>'closes_at', '')::timestamptz;
+  if closes is not null and now() >= closes then return false; end if;
+  return true;
+end;
+$$;
+
+grant execute on function public.get_server_time() to anon, authenticated;
+grant execute on function public.registration_is_open() to anon, authenticated;
+
+-- Replace the open insert policy with one that respects the deadline:
+drop policy if exists "Allow public inserts" on exam_registrations;
+drop policy if exists "Insert only while registration open" on exam_registrations;
+create policy "Insert only while registration open" on exam_registrations
+  for insert with check (public.registration_is_open());</pre>
         </div>
 
         <div class="flex items-center justify-end space-x-3 pt-2">
@@ -752,6 +838,7 @@ create unique index if not exists exam_registrations_name_room_key
       initRouting();
       initSupabaseConnection();
       loadRegistrations();
+      initRegistrationDeadline();
 
       window.addEventListener('hashchange', initRouting);
     });
@@ -945,6 +1032,246 @@ create unique index if not exists exam_registrations_name_room_key
     }
 
 
+    // --- REGISTRATION DEADLINE (server-clock based) ---
+    // The deadline lives in exam_config (key = 'registration') as
+    //   { closes_at: "<UTC ISO>" | null, manual_closed: true | false }
+    // "Now" comes from the Supabase server (get_server_time), and the database
+    // itself refuses inserts after the deadline (registration_is_open policy),
+    // so changing the device clock cannot get around it.
+    const REG_TZ = 'Asia/Manila';
+    const REG_UTC_OFFSET_MS = 8 * 3600 * 1000;
+
+    let regConfig = { closes_at: null, manual_closed: false };
+    let serverBaseMs = null;      // server time (ms) at the last sync
+    let serverPerfBase = 0;       // performance.now() at the last sync (not affected by device clock changes)
+    let serverTimeTrusted = false;
+    let serverSaysOpen = null;    // true / false from the database, null = unknown
+
+    function nowMs() {
+      return serverTimeTrusted ? serverBaseMs + (performance.now() - serverPerfBase) : Date.now();
+    }
+
+    async function syncServerTime() {
+      if (!supabaseClient) { serverTimeTrusted = false; return; }
+      try {
+        const t0 = performance.now();
+        const { data, error } = await supabaseClient.rpc('get_server_time');
+        const t1 = performance.now();
+        if (error || data === null || isNaN(Number(data))) throw (error || new Error('Bad server time'));
+        serverBaseMs = Number(data) + (t1 - t0) / 2;
+        serverPerfBase = t1;
+        serverTimeTrusted = true;
+      } catch (err) {
+        console.warn('Server time unavailable (run the Registration Deadline SQL):', err && err.message);
+      }
+    }
+
+    async function loadRegistrationConfig() {
+      if (supabaseClient) {
+        try {
+          const { data, error } = await supabaseClient.from('exam_config').select('value').eq('key', 'registration').maybeSingle();
+          if (!error) {
+            const v = data && data.value ? data.value : {};
+            regConfig = { closes_at: v.closes_at || null, manual_closed: !!v.manual_closed };
+            return;
+          }
+        } catch (err) { console.warn('Could not load registration config', err); }
+        return; // keep what we already have if the cloud is unreachable
+      }
+      try {
+        const v = JSON.parse(localStorage.getItem('examnet_registration') || '{}');
+        regConfig = { closes_at: v.closes_at || null, manual_closed: !!v.manual_closed };
+      } catch (e) { regConfig = { closes_at: null, manual_closed: false }; }
+    }
+
+    async function refreshRegistrationState() {
+      await loadRegistrationConfig();
+      await syncServerTime();
+      serverSaysOpen = null;
+      if (supabaseClient) {
+        try {
+          const { data, error } = await supabaseClient.rpc('registration_is_open');
+          if (!error && typeof data === 'boolean') serverSaysOpen = data;
+        } catch (e) { /* function not installed yet */ }
+      }
+      renderRegistrationState();
+    }
+
+    function getRegistrationStatus() {
+      if (regConfig.manual_closed) return { open: false, reason: 'manual' };
+      let msLeft = null;
+      if (regConfig.closes_at) {
+        const closesMs = Date.parse(regConfig.closes_at);
+        if (!isNaN(closesMs)) {
+          msLeft = closesMs - nowMs();
+          if (msLeft <= 0) return { open: false, reason: 'deadline' };
+        }
+      }
+      if (serverSaysOpen === false) return { open: false, reason: 'server' };
+      return { open: true, msLeft };
+    }
+
+    async function verifyRegistrationOpen() {
+      await refreshRegistrationState();
+      const st = getRegistrationStatus();
+      if (!st.open) {
+        alert('Registration is closed. Your entry was not saved.');
+        return false;
+      }
+      return true;
+    }
+
+    function fmtDuration(ms) {
+      let s = Math.max(0, Math.floor(ms / 1000));
+      const d = Math.floor(s / 86400); s %= 86400;
+      const hh = Math.floor(s / 3600); s %= 3600;
+      const mm = Math.floor(s / 60); s %= 60;
+      const p = n => String(n).padStart(2, '0');
+      return (d ? d + 'd ' : '') + p(hh) + 'h ' + p(mm) + 'm ' + p(s) + 's';
+    }
+
+    function fmtDeadline(iso) {
+      const ms = Date.parse(iso);
+      if (isNaN(ms)) return '';
+      return new Date(ms).toLocaleString('en-PH', { timeZone: REG_TZ, dateStyle: 'medium', timeStyle: 'short' });
+    }
+
+    function isoToManilaInput(iso) {
+      const ms = Date.parse(iso);
+      if (isNaN(ms)) return '';
+      return new Date(ms + REG_UTC_OFFSET_MS).toISOString().slice(0, 16);
+    }
+
+    function manilaInputToMs(v) {
+      const withSeconds = v.length === 16 ? v + ':00' : v;
+      return Date.parse(withSeconds + '+08:00');
+    }
+
+    function renderRegistrationState() {
+      const st = getRegistrationStatus();
+      const banner = document.getElementById('reg-deadline-banner');
+      const title = document.getElementById('reg-deadline-title');
+      const sub = document.getElementById('reg-deadline-sub');
+      const form = document.getElementById('student-form');
+      if (banner && form) {
+        const base = 'mb-6 rounded-xl border px-4 py-3 text-xs flex items-start gap-3 ';
+        if (!st.open) {
+          banner.className = base + 'bg-red-500/10 border-red-500/30 text-red-200';
+          title.textContent = 'Registration is closed';
+          if (st.reason === 'manual') sub.textContent = 'The administrator has closed registration. Please contact your instructor if you still need to register.';
+          else if (regConfig.closes_at) sub.textContent = 'The deadline was ' + fmtDeadline(regConfig.closes_at) + ' (Philippine time). Please contact your instructor if you still need to register.';
+          else sub.textContent = 'Please contact your instructor if you still need to register.';
+          form.inert = true;
+          form.classList.add('opacity-40', 'pointer-events-none', 'select-none');
+        } else {
+          form.inert = false;
+          form.classList.remove('opacity-40', 'pointer-events-none', 'select-none');
+          if (st.msLeft !== null) {
+            const urgent = st.msLeft < 3600 * 1000;
+            banner.className = base + (urgent ? 'bg-amber-500/10 border-amber-500/30 text-amber-200' : 'bg-blue-500/10 border-blue-500/30 text-blue-200');
+            title.textContent = 'Registration closes in ' + fmtDuration(st.msLeft);
+            sub.textContent = 'Deadline: ' + fmtDeadline(regConfig.closes_at) + ' (Philippine time). Timing is checked on the server, not your device clock.';
+          } else {
+            banner.className = 'hidden';
+          }
+        }
+      }
+      renderDeadlineAdmin(st);
+    }
+
+    function renderDeadlineAdmin(st) {
+      const box = document.getElementById('dl-status');
+      if (!box) return;
+      st = st || getRegistrationStatus();
+      const note = document.getElementById('dl-server-note');
+      const tog = document.getElementById('dl-toggle-btn');
+      if (!st.open) {
+        box.className = 'rounded-xl border px-3.5 py-3 text-xs font-semibold bg-red-500/10 border-red-500/30 text-red-300';
+        box.textContent = st.reason === 'manual'
+          ? 'Status: CLOSED (manually closed by admin)'
+          : 'Status: CLOSED (deadline reached' + (regConfig.closes_at ? ': ' + fmtDeadline(regConfig.closes_at) : '') + ')';
+      } else if (st.msLeft !== null) {
+        box.className = 'rounded-xl border px-3.5 py-3 text-xs font-semibold bg-emerald-500/10 border-emerald-500/30 text-emerald-300';
+        box.textContent = 'Status: OPEN. Closes ' + fmtDeadline(regConfig.closes_at) + ' (in ' + fmtDuration(st.msLeft) + ')';
+      } else {
+        box.className = 'rounded-xl border px-3.5 py-3 text-xs font-semibold bg-emerald-500/10 border-emerald-500/30 text-emerald-300';
+        box.textContent = 'Status: OPEN (no deadline set)';
+      }
+      if (note) {
+        if (!supabaseClient) {
+          note.className = 'text-[11px] leading-relaxed rounded-lg border px-3 py-2 bg-amber-500/10 border-amber-500/30 text-amber-300';
+          note.textContent = 'LocalStorage mode: the deadline only applies on this device. Connect Supabase so every student device follows it.';
+        } else if (serverSaysOpen === null || !serverTimeTrusted) {
+          note.className = 'text-[11px] leading-relaxed rounded-lg border px-3 py-2 bg-amber-500/10 border-amber-500/30 text-amber-300';
+          note.textContent = 'Server clock not detected. Open Supabase Settings, copy the SQL, and run the "REGISTRATION DEADLINE" block once. Until then the deadline uses each device clock and can be bypassed.';
+        } else {
+          note.className = 'text-[11px] leading-relaxed rounded-lg border px-3 py-2 bg-emerald-500/10 border-emerald-500/20 text-emerald-300';
+          note.textContent = 'Server clock active: the database itself rejects registrations after the deadline.';
+        }
+      }
+      if (tog) {
+        if (regConfig.manual_closed) {
+          tog.className = 'col-span-2 px-4 py-2.5 rounded-xl text-xs font-bold border bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border-emerald-500/30';
+          tog.textContent = 'Reopen Registration';
+        } else {
+          tog.className = 'col-span-2 px-4 py-2.5 rounded-xl text-xs font-bold border bg-red-500/10 hover:bg-red-500/20 text-red-300 border-red-500/30';
+          tog.textContent = 'Close Registration Now';
+        }
+      }
+    }
+
+    async function saveRegistrationConfig() {
+      localStorage.setItem('examnet_registration', JSON.stringify(regConfig));
+      if (supabaseClient) {
+        try {
+          const { error } = await supabaseClient.from('exam_config').upsert([{ key: 'registration', value: regConfig }], { onConflict: 'key' });
+          if (error) { alert('Could not save to Supabase: ' + error.message); return false; }
+        } catch (err) {
+          alert('Failed to reach Supabase. The deadline was NOT saved to the cloud.');
+          return false;
+        }
+      }
+      await refreshRegistrationState();
+      return true;
+    }
+
+    function openDeadlineModal() {
+      document.getElementById('dl-input').value = regConfig.closes_at ? isoToManilaInput(regConfig.closes_at) : '';
+      renderDeadlineAdmin();
+      openModal('deadline-modal');
+      refreshRegistrationState();
+    }
+
+    async function saveDeadline() {
+      const v = document.getElementById('dl-input').value;
+      if (!v) { alert('Please pick a deadline date and time.'); return; }
+      const ms = manilaInputToMs(v);
+      if (isNaN(ms)) { alert('That date and time is not valid.'); return; }
+      const inPast = ms <= nowMs();
+      if (inPast && !confirm('That time has already passed, so registration will close immediately. Continue?')) return;
+      regConfig = { closes_at: new Date(ms).toISOString(), manual_closed: inPast ? regConfig.manual_closed : false };
+      await saveRegistrationConfig();
+    }
+
+    async function clearDeadline() {
+      regConfig = { closes_at: null, manual_closed: regConfig.manual_closed };
+      document.getElementById('dl-input').value = '';
+      await saveRegistrationConfig();
+    }
+
+    async function toggleManualClose() {
+      if (!regConfig.manual_closed && !confirm('Close registration right now? Students will not be able to submit until you reopen it.')) return;
+      regConfig = { closes_at: regConfig.closes_at, manual_closed: !regConfig.manual_closed };
+      await saveRegistrationConfig();
+    }
+
+    function initRegistrationDeadline() {
+      refreshRegistrationState();
+      setInterval(renderRegistrationState, 1000);   // live countdown (uses the server-anchored clock)
+      setInterval(refreshRegistrationState, 30000); // pick up admin changes and re-sync the server time
+    }
+
+
     // --- ROUTING ENGINE ---
     function initRouting() {
       const hash = window.location.hash || '#register';
@@ -1033,6 +1360,7 @@ create unique index if not exists exam_registrations_name_room_key
       initSupabaseConnection();
       closeModal('supabase-modal');
       loadRegistrations();
+      refreshRegistrationState();
     }
 
     function disconnectSupabase() {
@@ -1043,6 +1371,7 @@ create unique index if not exists exam_registrations_name_room_key
       fallbackToLocal();
       closeModal('supabase-modal');
       loadRegistrations();
+      refreshRegistrationState();
     }
 
 
@@ -1192,6 +1521,10 @@ create unique index if not exists exam_registrations_name_room_key
     // Turns a database error into a message a student can act on.
     function friendlyDbError(error, action) {
       const msg = `${error.message || ''} ${error.details || ''}`;
+      if (error.code === '42501' || /row-level security/i.test(msg)) {
+        refreshRegistrationState();
+        return 'Registration is closed. Your entry was not saved.';
+      }
       if (error.code === '23505' || /duplicate key/i.test(msg)) {
         if (/name_room/i.test(msg)) return 'This name is already registered in that room.';
         if (/student_id/i.test(msg)) {
@@ -1405,6 +1738,9 @@ create unique index if not exists exam_registrations_name_room_key
     // --- STUDENT SUBMISSION WORKFLOW ---
     async function handleStudentSubmit(e) {
       e.preventDefault();
+
+      // Deadline check against the server clock (the database enforces it too)
+      if (!(await verifyRegistrationOpen())) return;
 
       if (!validateFullName()) return;
       const fullName = document.getElementById('reg-fullname').value.trim();
