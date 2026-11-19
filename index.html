@@ -298,6 +298,12 @@
         </div>
 
         <div class="flex flex-wrap items-center gap-2.5">
+          <!-- Admin: add a student manually (works even when public registration is closed) -->
+          <button onclick="openAdminAddModal()" id="admin-add-open-btn" class="px-3.5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs transition flex items-center gap-1.5 shadow-lg shadow-blue-600/20">
+            <i data-lucide="user-plus" class="w-4 h-4"></i>
+            Add Student
+          </button>
+
           <!-- Room/Course Config Opener -->
           <button onclick="openModal('organize-modal')" class="px-3.5 py-2.5 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 font-semibold text-xs transition flex items-center gap-1.5">
             <i data-lucide="settings-2" class="w-4 h-4"></i>
@@ -414,6 +420,111 @@
   <footer class="w-full border-t border-gray-800/80 py-4 text-center text-xs text-gray-500">
     ExamNet Management System &bull; Default Credentials: ZDSPGC@<span id="footer-year"></span>
   </footer>
+
+
+  <!-- ========================================== -->
+  <!-- ADMIN: ADD STUDENT (manual registration) -->
+  <!-- ========================================== -->
+  <div id="admin-add-modal" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="glass-card w-full max-w-md rounded-2xl p-6 relative max-h-[92vh] overflow-y-auto">
+      <button type="button" onclick="closeModal('admin-add-modal')" class="absolute top-4 right-4 text-gray-400 hover:text-white">
+        <i data-lucide="x" class="w-5 h-5"></i>
+      </button>
+
+      <div class="flex items-center space-x-3 mb-4">
+        <div class="w-10 h-10 rounded-xl bg-blue-500/10 text-blue-400 flex items-center justify-center border border-blue-500/20">
+          <i data-lucide="user-plus" class="w-5 h-5"></i>
+        </div>
+        <div>
+          <h3 class="text-lg font-bold text-white">Add Student (Admin)</h3>
+          <p class="text-xs text-gray-400">Same checks as the registration form. Works even when registration is closed.</p>
+        </div>
+      </div>
+
+      <div id="adm-state" class="mb-4 rounded-xl border px-3 py-2 text-[11px] font-semibold"></div>
+
+      <form id="admin-add-form" onsubmit="handleAdminAddSubmit(event)" class="space-y-4" autocomplete="off">
+        <!-- Name -->
+        <div>
+          <label class="block text-xs font-semibold text-gray-300 mb-1">Full Name</label>
+          <div class="space-y-2">
+            <input type="text" id="adm-lastname" maxlength="40" placeholder="Last name (e.g. Dela Cruz)" class="w-full px-3.5 py-2.5 rounded-xl glass-input text-xs uppercase placeholder:normal-case focus:outline-none" />
+            <input type="text" id="adm-firstname" maxlength="40" placeholder="First name (e.g. Juan)" class="w-full px-3.5 py-2.5 rounded-xl glass-input text-xs uppercase placeholder:normal-case focus:outline-none" />
+            <div class="flex gap-2">
+              <input type="text" id="adm-middleinit" maxlength="2" placeholder="M.I." class="w-16 shrink-0 px-2 py-2.5 rounded-xl glass-input text-xs text-center uppercase placeholder:normal-case focus:outline-none" />
+              <select id="adm-suffix" class="flex-1 min-w-0 px-3 py-2.5 rounded-xl glass-input text-xs focus:outline-none bg-gray-800">
+                <option value="">Suffix (optional)</option>
+                <option value="JR.">JR.</option>
+                <option value="SR.">SR.</option>
+                <option value="II">II</option>
+                <option value="III">III</option>
+                <option value="IV">IV</option>
+                <option value="V">V</option>
+              </select>
+            </div>
+          </div>
+          <p class="mt-1.5 text-[11px] text-gray-500">Saved as: <span id="adm-fullname-preview" class="font-semibold text-gray-300">&mdash;</span></p>
+        </div>
+
+        <!-- Student ID -->
+        <div>
+          <div class="flex items-center justify-between mb-1">
+            <label class="block text-xs font-semibold text-gray-300">Student ID</label>
+            <span id="adm-studentid-badge" class="hidden"></span>
+          </div>
+          <div class="flex gap-2">
+            <div class="flex-1 flex items-center rounded-xl glass-input glass-input-group px-3.5 py-2.5 text-xs font-mono">
+              <span id="adm-studentid-prefix" class="text-blue-300 font-bold mr-1"></span>
+              <input type="text" id="adm-studentid" maxlength="4" placeholder="A001" class="flex-1 min-w-0 bg-transparent uppercase focus:outline-none font-mono" />
+            </div>
+            <button type="button" id="adm-generate-btn" onclick="admGenerateId()" class="px-3 rounded-xl bg-blue-500/10 hover:bg-blue-500/20 text-blue-300 border border-blue-500/30 text-xs font-semibold flex items-center gap-1.5">
+              <i data-lucide="shuffle" class="w-3.5 h-3.5"></i> Generate
+            </button>
+          </div>
+          <p class="mt-1 text-[11px] text-gray-500">Tap Generate for a free ID, or type the student's own (e.g. <span id="adm-studentid-example" class="font-mono"></span>).</p>
+        </div>
+
+        <!-- Username -->
+        <div>
+          <div class="flex items-center justify-between mb-1">
+            <label class="block text-xs font-semibold text-gray-300">Username</label>
+            <span id="adm-username-badge" class="hidden"></span>
+          </div>
+          <input type="text" id="adm-username" placeholder="Username (no spaces)" class="w-full px-3.5 py-2.5 rounded-xl glass-input text-xs focus:outline-none" />
+        </div>
+
+        <!-- Course / Room -->
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-semibold text-gray-300 mb-1">Course</label>
+            <select id="adm-course" class="w-full px-3 py-2.5 rounded-xl glass-input text-xs bg-gray-800 focus:outline-none"></select>
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-gray-300 mb-1">Room / Block</label>
+            <select id="adm-room" class="w-full px-3 py-2.5 rounded-xl glass-input text-xs bg-gray-800 focus:outline-none"></select>
+          </div>
+        </div>
+
+        <div id="adm-dup-status" class="hidden"></div>
+
+        <!-- Admin entry key (only needed while registration is closed) -->
+        <div id="adm-keywrap" class="hidden">
+          <label class="block text-xs font-semibold text-amber-300 mb-1">Admin Entry Key</label>
+          <input type="password" id="adm-key" placeholder="Key you set in the Supabase SQL" autocomplete="new-password" class="w-full px-3.5 py-2.5 rounded-xl glass-input text-xs focus:outline-none" />
+          <p class="mt-1 text-[11px] text-gray-500">Required by the database to add students after the deadline. Remembered until you log out.</p>
+        </div>
+
+        <div id="adm-error" class="hidden text-xs font-semibold rounded-lg px-3 py-2 border bg-red-500/10 text-red-300 border-red-500/30"></div>
+
+        <p class="text-[11px] text-gray-500">The default temporary password <span class="font-mono text-amber-300 font-bold" id="adm-defpass"></span> is assigned automatically, same as the public form.</p>
+
+        <div class="flex items-center justify-end gap-3 pt-1">
+          <button type="button" onclick="closeModal('admin-add-modal')" class="px-4 py-2.5 rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-200 text-xs font-semibold border border-gray-700">Cancel</button>
+          <button type="submit" id="adm-submit-btn" class="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold shadow-lg shadow-blue-600/30">Add Student</button>
+        </div>
+      </form>
+    </div>
+  </div>
 
 
   <!-- ========================================== -->
@@ -792,7 +903,49 @@ grant execute on function public.registration_is_open() to anon, authenticated;
 drop policy if exists "Allow public inserts" on exam_registrations;
 drop policy if exists "Insert only while registration open" on exam_registrations;
 create policy "Insert only while registration open" on exam_registrations
-  for insert with check (public.registration_is_open());</pre>
+  for insert with check (public.registration_is_open());
+
+-- ========== ADMIN ENTRY WHILE CLOSED (run once) ==========
+-- Lets the Admin Dashboard "Add Student" button save students after the
+-- deadline, but ONLY when the correct Admin Entry Key is supplied.
+-- 1) Change CHANGE_THIS_KEY below to a private key only you know.
+-- 2) Students and the public form can NOT use this: the key is stored hashed
+--    in a table that the public API cannot read.
+create table if not exists public.admin_gate (
+  id int primary key default 1 check (id = 1),
+  key_hash text not null
+);
+alter table public.admin_gate enable row level security;
+revoke all on public.admin_gate from anon, authenticated;
+
+insert into public.admin_gate (id, key_hash)
+values (1, encode(sha256(convert_to('CHANGE_THIS_KEY', 'utf8')), 'hex'))
+on conflict (id) do update set key_hash = excluded.key_hash;
+
+create or replace function public.admin_add_registration(
+  p_key text, p_full_name text, p_username text, p_student_id text,
+  p_default_password text, p_course text, p_room text
+) returns uuid language plpgsql security definer
+set search_path = public as $$
+declare
+  h text;
+  new_id uuid;
+begin
+  select key_hash into h from public.admin_gate where id = 1;
+  if h is null or encode(sha256(convert_to(coalesce(p_key, ''), 'utf8')), 'hex') != h then
+    raise exception 'Invalid admin key' using errcode = '28000';
+  end if;
+  insert into public.exam_registrations
+    (full_name, username, student_id, default_password, course, room_number)
+  values
+    (p_full_name, p_username, p_student_id, p_default_password, p_course, p_room)
+  returning id into new_id;
+  return new_id;
+end;
+$$;
+
+revoke all on function public.admin_add_registration(text,text,text,text,text,text,text) from public;
+grant execute on function public.admin_add_registration(text,text,text,text,text,text,text) to anon, authenticated;</pre>
         </div>
 
         <div class="flex items-center justify-end space-x-3 pt-2">
@@ -1363,6 +1516,7 @@ create policy "Insert only while registration open" on exam_registrations
 
     function logoutAdmin() {
       sessionStorage.removeItem('examnet_admin_auth');
+      sessionStorage.removeItem(ADM_KEY_STORE);
       window.location.hash = '#register';
     }
 
@@ -1900,6 +2054,345 @@ create policy "Insert only while registration open" on exam_registrations
       document.getElementById('succ-room-course').innerText = `${room} (${course})`;
       document.getElementById('succ-password').innerText = defaultPassword;
 
+      openModal('success-modal');
+      loadRegistrations();
+    }
+
+
+    // =====================================================================
+    // ADMIN: ADD STUDENT FROM THE DASHBOARD
+    // Same rules as the public form (name+room duplicate, unique Student ID,
+    // unique username). Does NOT touch the public form, its deadline or its state.
+    // =====================================================================
+    const ADM_KEY_STORE = 'examnet_admin_entry_key';
+    let admSeq = 0, admTimer = null, admSaving = false;
+
+    function admEl(id) { return document.getElementById('adm-' + id); }
+
+    function admBuildFullName() {
+      const last = tidyName(admEl('lastname').value);
+      const first = tidyName(admEl('firstname').value);
+      const mi = (admEl('middleinit').value.match(/\p{L}/u) || [''])[0].toUpperCase();
+      const suffix = admEl('suffix').value;
+      if (!last && !first) return '';
+      return [(last && first) ? last + ',' : last, first, mi ? mi + '.' : '', suffix]
+        .filter(Boolean).join(' ').replace(/,\s*$/, '');
+    }
+
+    function admRefreshName() {
+      admEl('fullname-preview').textContent = admBuildFullName() || '\u2014';
+      admScheduleChecks();
+    }
+
+    function admSetError(msg) {
+      const box = admEl('error');
+      box.textContent = msg || '';
+      box.classList.toggle('hidden', !msg);
+    }
+
+    function admSetBadge(id, kind, text) {
+      const b = admEl(id);
+      if (!kind) { b.className = 'hidden'; b.textContent = ''; return; }
+      const styles = {
+        checking: 'bg-gray-800 text-gray-400 animate-pulse',
+        ok:       'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30',
+        taken:    'bg-red-500/20 text-red-400 border border-red-500/30',
+        warn:     'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+      };
+      b.className = 'text-xs px-2.5 py-0.5 rounded-md font-bold ' + styles[kind];
+      b.textContent = text;
+    }
+
+    function admSetDup(kind, text) {
+      const box = admEl('dup-status');
+      if (!kind) { box.className = 'hidden'; box.textContent = ''; return; }
+      const styles = {
+        checking: 'bg-gray-800 text-gray-400 border-gray-700 animate-pulse',
+        ok:       'bg-emerald-500/10 text-emerald-400 border-emerald-500/30',
+        warn:     'bg-amber-500/10 text-amber-400 border-amber-500/30',
+        dup:      'bg-red-500/10 text-red-400 border-red-500/40'
+      };
+      box.className = 'text-xs font-semibold rounded-lg px-3 py-2 border ' + styles[kind];
+      box.textContent = text;
+    }
+
+    // 'available' | 'taken' | 'unknown'
+    async function lookupUsername(username) {
+      if (supabaseClient) {
+        try {
+          const safe = username.replace(/[\\%_]/g, m => '\\' + m);
+          const { data, error } = await supabaseClient
+            .from('exam_registrations').select('id').ilike('username', safe).limit(1);
+          if (error) return 'unknown';
+          return (data && data.length) ? 'taken' : 'available';
+        } catch (e) { return 'unknown'; }
+      }
+      const local = JSON.parse(localStorage.getItem('examnet_students') || '[]');
+      return local.some(s => (s.username || '').toLowerCase() === username.toLowerCase()) ? 'taken' : 'available';
+    }
+
+    function admScheduleChecks() {
+      clearTimeout(admTimer);
+      admTimer = setTimeout(admRunChecks, 350);
+    }
+
+    async function admRunChecks() {
+      const seq = ++admSeq;
+      const room = admEl('room').value;
+      const last = tidyName(admEl('lastname').value);
+      const first = tidyName(admEl('firstname').value);
+
+      // 1) same name in the same room
+      if (last.length >= 2 && first.length >= 2 && room) {
+        admSetDup('checking', 'Checking if this name is already registered in ' + room + '...');
+        const res = await findNameDuplicate(admBuildFullName(), room, null);
+        if (seq !== admSeq) return;
+        if (res.match) admSetDup('dup', 'Already registered: ' + res.match.full_name + ' is already in ' + room + '.');
+        else if (!res.verified) admSetDup('warn', 'Could not verify duplicates right now. It will be checked again when you save.');
+        else admSetDup('ok', 'No duplicate found in ' + room + '.');
+      } else {
+        admSetDup(null);
+      }
+
+      // 2) username
+      const uname = admEl('username').value.trim();
+      if (uname) {
+        admSetBadge('username-badge', 'checking', 'Checking...');
+        const r = await lookupUsername(uname);
+        if (seq !== admSeq) return;
+        if (r === 'taken') admSetBadge('username-badge', 'taken', 'Username Taken');
+        else if (r === 'unknown') admSetBadge('username-badge', 'warn', 'Could not verify');
+        else admSetBadge('username-badge', 'ok', 'Available');
+      } else {
+        admSetBadge('username-badge', null);
+      }
+
+      // 3) student ID
+      const sfx = admEl('studentid').value.trim().toUpperCase();
+      if (sfx.length === 4) {
+        admSetBadge('studentid-badge', 'checking', 'Checking...');
+        const r = await lookupStudentId(STUDENT_ID_PREFIX + sfx);
+        if (seq !== admSeq) return;
+        if (r === 'taken') admSetBadge('studentid-badge', 'taken', 'ID Taken');
+        else if (r === 'unknown') admSetBadge('studentid-badge', 'warn', 'Could not verify');
+        else admSetBadge('studentid-badge', 'ok', 'Available');
+      } else {
+        admSetBadge('studentid-badge', null);
+      }
+    }
+
+    async function admGenerateId() {
+      const btn = admEl('generate-btn');
+      btn.disabled = true;
+      admSetBadge('studentid-badge', 'checking', 'Generating...');
+      let chosen = null;
+      for (let i = 0; i < 20; i++) {
+        const cand = randomStudentIdSuffix();
+        const r = await lookupStudentId(STUDENT_ID_PREFIX + cand);
+        if (r !== 'taken') { chosen = cand; break; }
+      }
+      btn.disabled = false;
+      if (!chosen) { admSetBadge('studentid-badge', 'taken', 'Try again'); return; }
+      admEl('studentid').value = chosen;
+      admScheduleChecks();
+    }
+
+    // Shows whether the public form is open or closed and whether the key field is needed
+    function admRenderState() {
+      const st = getRegistrationStatus();
+      const box = admEl('state');
+      if (st.open) {
+        box.className = 'mb-4 rounded-xl border px-3 py-2 text-[11px] font-semibold bg-emerald-500/10 border-emerald-500/30 text-emerald-300';
+        box.textContent = 'Public registration is open. Students are saved the normal way.';
+        admEl('keywrap').classList.add('hidden');
+      } else {
+        box.className = 'mb-4 rounded-xl border px-3 py-2 text-[11px] font-semibold bg-amber-500/10 border-amber-500/30 text-amber-200';
+        box.textContent = 'Public registration is closed. Admin entry will be used (needs your Admin Entry Key). The public form stays closed.';
+        admEl('keywrap').classList.remove('hidden');
+      }
+    }
+
+    function openAdminAddModal() {
+      admEl('studentid-prefix').textContent = STUDENT_ID_PREFIX;
+      admEl('studentid-example').textContent = STUDENT_ID_PREFIX + 'A001';
+      admEl('defpass').textContent = DEFAULT_PASS_PATTERN;
+
+      // keep the dropdowns in sync with Manage Rooms & Courses
+      admEl('course').innerHTML = availableCourses.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+      admEl('room').innerHTML = `<option value="" disabled selected>Select room</option>` +
+        availableRooms.map(r => `<option value="${escapeHtml(r)}">${escapeHtml(r)}</option>`).join('');
+
+      document.getElementById('admin-add-form').reset();
+      admEl('key').value = sessionStorage.getItem(ADM_KEY_STORE) || '';
+      admEl('fullname-preview').textContent = '\u2014';
+      admSetError('');
+      admSetDup(null);
+      admSetBadge('username-badge', null);
+      admSetBadge('studentid-badge', null);
+      admRenderState();
+      openModal('admin-add-modal');
+      lucide.createIcons();
+      refreshRegistrationState().then(admRenderState).catch(() => {});
+      admEl('lastname').focus();
+    }
+
+    function initAdminAddForm() {
+      ['lastname', 'firstname'].forEach(id => {
+        const el = admEl(id);
+        el.addEventListener('input', () => {
+          enforceUpperName(el);
+          el.value = el.value.replace(/,/g, '');
+          admSetError('');
+          admRefreshName();
+        });
+        el.addEventListener('blur', () => { el.value = tidyName(el.value); admRefreshName(); });
+      });
+      const mi = admEl('middleinit');
+      mi.addEventListener('input', () => {
+        mi.value = (mi.value.match(/\p{L}/u) || [''])[0].toUpperCase();
+        admRefreshName();
+      });
+      admEl('suffix').addEventListener('change', admRefreshName);
+      admEl('room').addEventListener('change', admScheduleChecks);
+      admEl('username').addEventListener('input', e => {
+        e.target.value = e.target.value.replace(/\s+/g, '');
+        admSetError('');
+        admScheduleChecks();
+      });
+      admEl('studentid').addEventListener('input', e => {
+        e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+        admSetError('');
+        admScheduleChecks();
+      });
+    }
+    document.addEventListener('DOMContentLoaded', initAdminAddForm);
+
+    function admDbError(error) {
+      const msg = `${error.message || ''} ${error.details || ''}`;
+      if (error.code === '23505' || /duplicate key/i.test(msg)) {
+        if (/name_room/i.test(msg)) return 'This name is already registered in that room.';
+        if (/student_id/i.test(msg)) return 'That Student ID was just taken. Use another one.';
+        if (/username/i.test(msg)) return 'That username was just taken. Use another one.';
+        return 'This record already exists.';
+      }
+      if (error.code === '23514' || /student_id_format/i.test(msg)) {
+        return `Student ID must look like ${STUDENT_ID_PREFIX}A001 (the letter A followed by 3 digits).`;
+      }
+      return 'Supabase error: ' + (error.message || 'unknown error');
+    }
+
+    // Saves one record. Order: normal insert first (works while open); if the database
+    // says registration is closed, use the key-protected admin function instead.
+    async function admInsertRecord(rec) {
+      if (!supabaseClient) {
+        studentsData.unshift({ id: crypto.randomUUID(), ...rec, created_at: new Date().toISOString() });
+        saveToLocal();
+        return { ok: true };
+      }
+
+      let res;
+      try { res = await supabaseClient.from('exam_registrations').insert([rec]); }
+      catch (e) { return { ok: false, message: 'Could not reach Supabase. Nothing was saved. Check your connection and try again.' }; }
+      if (!res.error) return { ok: true };
+
+      const blocked = res.error.code === '42501' || /row-level security/i.test(res.error.message || '');
+      if (!blocked) return { ok: false, message: admDbError(res.error) };
+
+      // Registration is closed at the database level -> admin function
+      admEl('keywrap').classList.remove('hidden');
+      const key = admEl('key').value;
+      if (!key) return { ok: false, message: 'Registration is closed. Enter your Admin Entry Key to add this student.' };
+
+      let rpc;
+      try {
+        rpc = await supabaseClient.rpc('admin_add_registration', {
+          p_key: key,
+          p_full_name: rec.full_name,
+          p_username: rec.username,
+          p_student_id: rec.student_id,
+          p_default_password: rec.default_password,
+          p_course: rec.course,
+          p_room: rec.room_number
+        });
+      } catch (e) { return { ok: false, message: 'Could not reach Supabase. Nothing was saved.' }; }
+
+      if (!rpc.error) { sessionStorage.setItem(ADM_KEY_STORE, key); return { ok: true }; }
+
+      const m = `${rpc.error.message || ''} ${rpc.error.details || ''}`;
+      if (rpc.error.code === 'PGRST202' || /could not find the function|schema cache/i.test(m)) {
+        return { ok: false, message: 'Admin entry is not installed yet. Open Supabase Settings, copy the SQL, and run the "ADMIN ENTRY WHILE CLOSED" block in the Supabase SQL Editor.' };
+      }
+      if (rpc.error.code === '28000' || /invalid admin key/i.test(m)) {
+        sessionStorage.removeItem(ADM_KEY_STORE);
+        return { ok: false, message: 'Wrong Admin Entry Key.' };
+      }
+      return { ok: false, message: admDbError(rpc.error) };
+    }
+
+    async function handleAdminAddSubmit(e) {
+      e.preventDefault();
+      if (admSaving) return;
+      admSetError('');
+
+      const last = tidyName(admEl('lastname').value);
+      const first = tidyName(admEl('firstname').value);
+      if (last.length < 2) { admSetError('Please enter the last name.'); admEl('lastname').focus(); return; }
+      if (first.length < 2) { admSetError('Please enter the first name.'); admEl('firstname').focus(); return; }
+
+      const fullName = admBuildFullName();
+      const username = admEl('username').value.trim().replace(/\s+/g, '');
+      const sfx = admEl('studentid').value.trim().toUpperCase();
+      const studentId = STUDENT_ID_PREFIX + sfx;
+      const course = admEl('course').value;
+      const room = admEl('room').value;
+
+      if (!room) { admSetError('Please select a room.'); return; }
+      if (!course) { admSetError('Please select a course.'); return; }
+      if (!username) { admSetError('Please enter a username.'); admEl('username').focus(); return; }
+      if (!sfx) { admSetError('Please enter or generate a Student ID.'); admEl('studentid').focus(); return; }
+      if (!STUDENT_ID_REGEX.test(studentId)) {
+        admSetError(`Student ID must look like ${STUDENT_ID_PREFIX}A001 (4 letters/digits after the dash).`);
+        admEl('studentid').focus();
+        return;
+      }
+
+      const btn = admEl('submit-btn');
+      admSaving = true;
+      btn.disabled = true;
+      btn.textContent = 'Checking...';
+      const done = () => { admSaving = false; btn.disabled = false; btn.textContent = 'Add Student'; };
+
+      // Fresh duplicate checks right before saving (never trust the live badges alone)
+      const [dup, uRes, idRes] = await Promise.all([
+        findNameDuplicate(fullName, room, null),
+        lookupUsername(username),
+        lookupStudentId(studentId)
+      ]);
+      if (dup.match) { admSetDup('dup', 'Already registered: ' + dup.match.full_name + ' is already in ' + room + '.'); admSetError('Duplicate name in this room. Not saved.'); done(); return; }
+      if (uRes === 'taken') { admSetBadge('username-badge', 'taken', 'Username Taken'); admSetError('That username is already taken.'); done(); return; }
+      if (idRes === 'taken') { admSetBadge('studentid-badge', 'taken', 'ID Taken'); admSetError('That Student ID is already taken. Tap Generate for another.'); done(); return; }
+
+      btn.textContent = 'Saving...';
+      const rec = {
+        full_name: fullName,
+        username: username,
+        student_id: studentId,
+        default_password: DEFAULT_PASS_PATTERN,
+        course: course,
+        room_number: room
+      };
+      const result = await admInsertRecord(rec);
+      done();
+      if (!result.ok) { admSetError(result.message); return; }
+
+      lastCreatedAccount = { ...rec };
+      document.getElementById('succ-fullname').innerText = fullName;
+      document.getElementById('succ-studentid').innerText = studentId;
+      document.getElementById('succ-username').innerText = username;
+      document.getElementById('succ-room-course').innerText = `${room} (${course})`;
+      document.getElementById('succ-password').innerText = DEFAULT_PASS_PATTERN;
+
+      closeModal('admin-add-modal');
       openModal('success-modal');
       loadRegistrations();
     }
