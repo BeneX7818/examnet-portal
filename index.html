@@ -475,13 +475,13 @@
           <div class="flex gap-2">
             <div class="flex-1 flex items-center rounded-xl glass-input glass-input-group px-3.5 py-2.5 text-xs font-mono">
               <span id="adm-studentid-prefix" class="text-blue-300 font-bold mr-1"></span>
-              <input type="text" id="adm-studentid" maxlength="4" placeholder="A001" class="flex-1 min-w-0 bg-transparent uppercase focus:outline-none font-mono" />
+              <input type="text" id="adm-studentid" readonly tabindex="-1" inputmode="none" autocomplete="off" maxlength="4" placeholder="Tap Generate" title="This ID can only be created with the Generate button" class="flex-1 min-w-0 bg-transparent uppercase focus:outline-none font-mono cursor-default select-all" />
             </div>
             <button type="button" id="adm-generate-btn" onclick="admGenerateId()" class="px-3 rounded-xl bg-blue-500/10 hover:bg-blue-500/20 text-blue-300 border border-blue-500/30 text-xs font-semibold flex items-center gap-1.5">
               <i data-lucide="shuffle" class="w-3.5 h-3.5"></i> Generate
             </button>
           </div>
-          <p class="mt-1 text-[11px] text-gray-500">Tap Generate for a free ID, or type the student's own (e.g. <span id="adm-studentid-example" class="font-mono"></span>).</p>
+          <p class="mt-1 text-[11px] text-gray-500">Tap Generate to get a free ID (e.g. <span id="adm-studentid-example" class="font-mono"></span>). It cannot be typed.</p>
         </div>
 
         <!-- Username -->
@@ -2357,7 +2357,7 @@ grant execute on function public.admin_add_registration(text,text,text,text,text
       if (!room) { admSetError('Please select a room.'); return; }
       if (!course) { admSetError('Please select a course.'); return; }
       if (!username) { admSetError('Please enter a username.'); admEl('username').focus(); return; }
-      if (!sfx) { admSetError('Please enter or generate a Student ID.'); admEl('studentid').focus(); return; }
+      if (!sfx) { admSetError('Please tap Generate to get a Student ID.'); admEl('generate-btn').focus(); return; }
       if (!STUDENT_ID_REGEX.test(studentId)) {
         admSetError(`Student ID must look like ${STUDENT_ID_PREFIX}A001 (4 letters/digits after the dash).`);
         admEl('studentid').focus();
