@@ -866,11 +866,17 @@ alter table exam_registrations add constraint exam_registrations_student_id_form
 create unique index if not exists exam_registrations_student_id_key
   on exam_registrations (student_id);
 
--- OPTIONAL (strict): block the same name twice in the same room at the
+-- OPTIONAL (strict): block the same name twice in ANY room at the
 -- database level. If this errors, you already have duplicate records:
 -- delete them first, then run it again.
-create unique index if not exists exam_registrations_name_room_key
-  on exam_registrations (upper(trim(full_name)), room_number);
+create unique index if not exists exam_registrations_name_key
+  on exam_registrations (upper(trim(full_name)));
+
+-- RECOMMENDED: usernames are unique ignoring capitalization (Jake = jake),
+-- the same rule the form uses. If this errors, two usernames differ only
+-- by capital letters: rename one, then run it again.
+create unique index if not exists exam_registrations_username_lower_key
+  on exam_registrations (lower(username));
 
 -- ========== REGISTRATION DEADLINE (run once) ==========
 -- Server clock + database-level lock. Nobody can bypass this by changing
@@ -1615,31 +1621,24 @@ grant execute on function public.admin_add_registration(text,text,text,text,text
 
     async function checkUsernameAvailability(username) {
       const badge = document.getElementById('username-status-badge');
-      let isTaken = false;
 
-      if (supabaseClient) {
-        try {
-          const { data, error } = await supabaseClient
-            .from('exam_registrations')
-            .select('id')
-            .ilike('username', username)
-            .limit(1);
+      // Same lookup the Admin form uses: case-insensitive, and the characters _ and %
+      // are matched literally (they are wildcards in ilike). Returns 'taken' | 'available' | 'unknown'.
+      const result = await lookupUsername(username);
 
-          if (!error && data && data.length > 0) {
-            isTaken = true;
-          }
-        } catch (e) {
-          console.error("Availability check error:", e);
-        }
-      } else {
-        const localData = JSON.parse(localStorage.getItem('examnet_students') || '[]');
-        isTaken = localData.some(s => s.username.toLowerCase() === username.toLowerCase());
-      }
+      // The student kept typing while we were checking: ignore this old answer.
+      if (document.getElementById('reg-username').value.replace(/\s+/g, '') !== username) return;
 
-      if (isTaken) {
+      if (result === 'taken') {
         isUsernameAvailable = false;
         badge.className = "text-xs px-2.5 py-0.5 rounded-md font-bold bg-red-500/20 text-red-400 border border-red-500/30";
         badge.innerText = "Username Taken";
+      } else if (result === 'unknown') {
+        // Could not reach the database: say so honestly (never "Available").
+        // The database's unique rule still blocks a duplicate when the form is submitted.
+        isUsernameAvailable = true;
+        badge.className = "text-xs px-2.5 py-0.5 rounded-md font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30";
+        badge.innerText = "Could not verify";
       } else {
         isUsernameAvailable = true;
         badge.className = "text-xs px-2.5 py-0.5 rounded-md font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30";
@@ -1648,7 +1647,6 @@ grant execute on function public.admin_add_registration(text,text,text,text,text
     }
 
 
-    // --- STUDENT ID (self-generated: YEAR-XXXX) ---
     function initStudentIdField() {
       document.getElementById('studentid-prefix').innerText = STUDENT_ID_PREFIX;
       document.getElementById('studentid-example').innerText = STUDENT_ID_PREFIX + 'A001';
@@ -1741,7 +1739,7 @@ grant execute on function public.admin_add_registration(text,text,text,text,text
         return 'Registration is closed. Your entry was not saved.';
       }
       if (error.code === '23505' || /duplicate key/i.test(msg)) {
-        if (/name_room/i.test(msg)) return 'This name is already registered in that room.';
+        if (/name_room|name_key/i.test(msg)) return 'This name is already registered.';
         if (/student_id/i.test(msg)) {
           isStudentIdAvailable = false;
           setStudentIdBadge('taken', 'ID Taken');
@@ -1878,7 +1876,7 @@ grant execute on function public.admin_add_registration(text,text,text,text,text
     document.addEventListener('DOMContentLoaded', initNameField);
 
 
-    // --- DUPLICATE NAME CHECK (same name + same room) ---
+    // --- DUPLICATE NAME CHECK (same name in ANY room) ---
     let nameDupSeq = 0;
     let nameDupTimer = null;
 
@@ -1887,24 +1885,25 @@ grant execute on function public.admin_add_registration(text,text,text,text,text
       return (n || '').toUpperCase().replace(/[^\p{L}\s]/gu, ' ').split(/\s+/).filter(Boolean).sort().join(' ');
     }
 
-    // Returns { match, verified }. match = the existing record with the same name in that room.
+    // Returns { match, verified }. match = the existing record with the same name in ANY room
+    // (a student must not be registered twice, even in a different room).
+    // The 'room' argument is kept so existing callers keep working, but it is no longer used.
     async function findNameDuplicate(fullName, room, excludeId) {
       const key = nameKey(fullName);
-      if (!key || !room) return { match: null, verified: true };
+      if (!key) return { match: null, verified: true };
       let rows;
       if (supabaseClient) {
         try {
           const { data, error } = await supabaseClient
             .from('exam_registrations')
-            .select('id, full_name')
-            .eq('room_number', room);
+            .select('id, full_name, room_number');
           if (error || !data) return { match: null, verified: false };
           rows = data;
         } catch (e) {
           return { match: null, verified: false };
         }
       } else {
-        rows = JSON.parse(localStorage.getItem('examnet_students') || '[]').filter(s => s.room_number === room);
+        rows = JSON.parse(localStorage.getItem('examnet_students') || '[]');
       }
       const match = rows.find(r => r.id !== excludeId && nameKey(r.full_name) === key) || null;
       return { match, verified: true };
@@ -1930,22 +1929,21 @@ grant execute on function public.admin_add_registration(text,text,text,text,text
 
     async function runNameDupCheck() {
       const seq = ++nameDupSeq;
-      const room = document.getElementById('reg-room').value;
       const full = document.getElementById('reg-fullname').value;
       const last = tidyName(document.getElementById('reg-lastname').value);
       const first = tidyName(document.getElementById('reg-firstname').value);
-      if (last.length < 2 || first.length < 2 || !room) { setNameDupStatus(null); return; }
+      if (last.length < 2 || first.length < 2) { setNameDupStatus(null); return; }
 
-      setNameDupStatus('checking', 'Checking if this name is already registered in ' + room + '...');
-      const res = await findNameDuplicate(full, room, null);
+      setNameDupStatus('checking', 'Checking if this name is already registered...');
+      const res = await findNameDuplicate(full, null, null);
       if (seq !== nameDupSeq) return;   // a newer check replaced this one
 
       if (res.match) {
-        setNameDupStatus('dup', 'Already registered: ' + res.match.full_name + ' is already in ' + room + '. You cannot register twice in the same room.');
+        setNameDupStatus('dup', 'Already registered: ' + res.match.full_name + ' is already registered in ' + res.match.room_number + '. You cannot register twice.');
       } else if (!res.verified) {
         setNameDupStatus('warn', 'Could not verify duplicates right now. The system will check again when you submit.');
       } else {
-        setNameDupStatus('ok', 'No duplicate found in ' + room + '.');
+        setNameDupStatus('ok', 'No duplicate found.');
       }
     }
 
@@ -1966,7 +1964,7 @@ grant execute on function public.admin_add_registration(text,text,text,text,text
 
       const dupRes = await findNameDuplicate(fullName, room, null);
       if (dupRes.match) {
-        setNameDupStatus('dup', 'Already registered: ' + dupRes.match.full_name + ' is already in ' + room + '. You cannot register twice in the same room.');
+        setNameDupStatus('dup', 'Already registered: ' + dupRes.match.full_name + ' is already registered in ' + dupRes.match.room_number + '. You cannot register twice.');
         document.getElementById('name-dup-status').scrollIntoView({ behavior: 'smooth', block: 'center' });
         return;
       }
@@ -1988,6 +1986,16 @@ grant execute on function public.admin_add_registration(text,text,text,text,text
 
       if (!isUsernameAvailable) {
         alert('Username is already taken or being verified. Please enter a unique username.');
+        return;
+      }
+
+      // Fresh check right before saving (never trust the live badge alone)
+      if ((await lookupUsername(username)) === 'taken') {
+        isUsernameAvailable = false;
+        const ub = document.getElementById('username-status-badge');
+        ub.className = "text-xs px-2.5 py-0.5 rounded-md font-bold bg-red-500/20 text-red-400 border border-red-500/30";
+        ub.innerText = "Username Taken";
+        alert('That username was just taken. Please choose another.');
         return;
       }
 
@@ -2142,14 +2150,14 @@ grant execute on function public.admin_add_registration(text,text,text,text,text
       const last = tidyName(admEl('lastname').value);
       const first = tidyName(admEl('firstname').value);
 
-      // 1) same name in the same room
-      if (last.length >= 2 && first.length >= 2 && room) {
-        admSetDup('checking', 'Checking if this name is already registered in ' + room + '...');
+      // 1) same name in any room
+      if (last.length >= 2 && first.length >= 2) {
+        admSetDup('checking', 'Checking if this name is already registered...');
         const res = await findNameDuplicate(admBuildFullName(), room, null);
         if (seq !== admSeq) return;
-        if (res.match) admSetDup('dup', 'Already registered: ' + res.match.full_name + ' is already in ' + room + '.');
+        if (res.match) admSetDup('dup', 'Already registered: ' + res.match.full_name + ' is already registered in ' + res.match.room_number + '.');
         else if (!res.verified) admSetDup('warn', 'Could not verify duplicates right now. It will be checked again when you save.');
-        else admSetDup('ok', 'No duplicate found in ' + room + '.');
+        else admSetDup('ok', 'No duplicate found.');
       } else {
         admSetDup(null);
       }
@@ -2270,7 +2278,7 @@ grant execute on function public.admin_add_registration(text,text,text,text,text
     function admDbError(error) {
       const msg = `${error.message || ''} ${error.details || ''}`;
       if (error.code === '23505' || /duplicate key/i.test(msg)) {
-        if (/name_room/i.test(msg)) return 'This name is already registered in that room.';
+        if (/name_room|name_key/i.test(msg)) return 'This name is already registered.';
         if (/student_id/i.test(msg)) return 'That Student ID was just taken. Use another one.';
         if (/username/i.test(msg)) return 'That username was just taken. Use another one.';
         return 'This record already exists.';
@@ -2368,7 +2376,7 @@ grant execute on function public.admin_add_registration(text,text,text,text,text
         lookupUsername(username),
         lookupStudentId(studentId)
       ]);
-      if (dup.match) { admSetDup('dup', 'Already registered: ' + dup.match.full_name + ' is already in ' + room + '.'); admSetError('Duplicate name in this room. Not saved.'); done(); return; }
+      if (dup.match) { admSetDup('dup', 'Already registered: ' + dup.match.full_name + ' is already registered in ' + dup.match.room_number + '.'); admSetError('Duplicate name. Not saved.'); done(); return; }
       if (uRes === 'taken') { admSetBadge('username-badge', 'taken', 'Username Taken'); admSetError('That username is already taken.'); done(); return; }
       if (idRes === 'taken') { admSetBadge('studentid-badge', 'taken', 'ID Taken'); admSetError('That Student ID is already taken. Tap Generate for another.'); done(); return; }
 
@@ -2430,10 +2438,10 @@ grant execute on function public.admin_add_registration(text,text,text,text,text
       const studentId = studentIdRaw || null;
 
       const before = studentsData.find(s => s.id === id);
-      if (!before || nameKey(before.full_name) !== nameKey(fullName) || before.room_number !== room) {
+      if (!before || nameKey(before.full_name) !== nameKey(fullName)) {
         const dupEdit = await findNameDuplicate(fullName, room, id);
         if (dupEdit.match) {
-          alert(dupEdit.match.full_name + ' is already registered in ' + room + '. Change the name or the room.');
+          alert(dupEdit.match.full_name + ' is already registered in ' + dupEdit.match.room_number + '. Change the name.');
           return;
         }
       }
