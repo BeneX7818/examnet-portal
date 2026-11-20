@@ -475,13 +475,13 @@
           <div class="flex gap-2">
             <div class="flex-1 flex items-center rounded-xl glass-input glass-input-group px-3.5 py-2.5 text-xs font-mono">
               <span id="adm-studentid-prefix" class="text-blue-300 font-bold mr-1"></span>
-              <input type="text" id="adm-studentid" readonly tabindex="-1" inputmode="none" autocomplete="off" maxlength="4" placeholder="Tap Generate" title="This ID can only be created with the Generate button" class="flex-1 min-w-0 bg-transparent uppercase focus:outline-none font-mono cursor-default select-all" />
+              <input type="text" id="adm-studentid" maxlength="4" placeholder="A001" class="flex-1 min-w-0 bg-transparent uppercase focus:outline-none font-mono" />
             </div>
             <button type="button" id="adm-generate-btn" onclick="admGenerateId()" class="px-3 rounded-xl bg-blue-500/10 hover:bg-blue-500/20 text-blue-300 border border-blue-500/30 text-xs font-semibold flex items-center gap-1.5">
               <i data-lucide="shuffle" class="w-3.5 h-3.5"></i> Generate
             </button>
           </div>
-          <p class="mt-1 text-[11px] text-gray-500">Tap Generate to get a free ID (e.g. <span id="adm-studentid-example" class="font-mono"></span>). It cannot be typed.</p>
+          <p class="mt-1 text-[11px] text-gray-500">Tap Generate for a free ID, or type the student's own (e.g. <span id="adm-studentid-example" class="font-mono"></span>).</p>
         </div>
 
         <!-- Username -->
@@ -866,17 +866,11 @@ alter table exam_registrations add constraint exam_registrations_student_id_form
 create unique index if not exists exam_registrations_student_id_key
   on exam_registrations (student_id);
 
--- OPTIONAL (strict): block the same name twice in ANY room at the
+-- OPTIONAL (strict): block the same name twice in the same room at the
 -- database level. If this errors, you already have duplicate records:
 -- delete them first, then run it again.
-create unique index if not exists exam_registrations_name_key
-  on exam_registrations (upper(trim(full_name)));
-
--- RECOMMENDED: usernames are unique ignoring capitalization (Jake = jake),
--- the same rule the form uses. If this errors, two usernames differ only
--- by capital letters: rename one, then run it again.
-create unique index if not exists exam_registrations_username_lower_key
-  on exam_registrations (lower(username));
+create unique index if not exists exam_registrations_name_room_key
+  on exam_registrations (upper(trim(full_name)), room_number);
 
 -- ========== REGISTRATION DEADLINE (run once) ==========
 -- Server clock + database-level lock. Nobody can bypass this by changing
@@ -1014,6 +1008,18 @@ grant execute on function public.admin_add_registration(text,text,text,text,text
         <i data-lucide="alert-circle" class="w-4 h-4 shrink-0 mt-0.5"></i>
         <span>Use this temporary password for your first login on ExamNet. You will be prompted to set a personal password afterward.</span>
       </p>
+
+      <!-- Save-as-image (screenshot) of the account details -->
+      <div class="rounded-xl border border-indigo-500/25 bg-indigo-500/10 p-3 space-y-2.5">
+        <p class="text-[11px] text-indigo-200 leading-relaxed flex items-start gap-1.5">
+          <i data-lucide="camera" class="w-4 h-4 shrink-0 mt-0.5"></i>
+          <span><strong class="text-white">Take a screenshot of your details.</strong> Tap the button below to save an image of your Student ID, username and password so you can check it later.</span>
+        </p>
+        <button id="save-shot-btn" type="button" onclick="saveAccountScreenshot()" class="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow-lg shadow-indigo-600/30 transition flex items-center justify-center gap-1.5">
+          <i data-lucide="image-down" class="w-4 h-4"></i>
+          <span id="save-shot-label">Save Screenshot</span>
+        </button>
+      </div>
 
       <button onclick="closeModal('success-modal')" class="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-lg shadow-emerald-600/30">
         Done
@@ -1621,24 +1627,31 @@ grant execute on function public.admin_add_registration(text,text,text,text,text
 
     async function checkUsernameAvailability(username) {
       const badge = document.getElementById('username-status-badge');
+      let isTaken = false;
 
-      // Same lookup the Admin form uses: case-insensitive, and the characters _ and %
-      // are matched literally (they are wildcards in ilike). Returns 'taken' | 'available' | 'unknown'.
-      const result = await lookupUsername(username);
+      if (supabaseClient) {
+        try {
+          const { data, error } = await supabaseClient
+            .from('exam_registrations')
+            .select('id')
+            .ilike('username', username)
+            .limit(1);
 
-      // The student kept typing while we were checking: ignore this old answer.
-      if (document.getElementById('reg-username').value.replace(/\s+/g, '') !== username) return;
+          if (!error && data && data.length > 0) {
+            isTaken = true;
+          }
+        } catch (e) {
+          console.error("Availability check error:", e);
+        }
+      } else {
+        const localData = JSON.parse(localStorage.getItem('examnet_students') || '[]');
+        isTaken = localData.some(s => s.username.toLowerCase() === username.toLowerCase());
+      }
 
-      if (result === 'taken') {
+      if (isTaken) {
         isUsernameAvailable = false;
         badge.className = "text-xs px-2.5 py-0.5 rounded-md font-bold bg-red-500/20 text-red-400 border border-red-500/30";
         badge.innerText = "Username Taken";
-      } else if (result === 'unknown') {
-        // Could not reach the database: say so honestly (never "Available").
-        // The database's unique rule still blocks a duplicate when the form is submitted.
-        isUsernameAvailable = true;
-        badge.className = "text-xs px-2.5 py-0.5 rounded-md font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30";
-        badge.innerText = "Could not verify";
       } else {
         isUsernameAvailable = true;
         badge.className = "text-xs px-2.5 py-0.5 rounded-md font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30";
@@ -1647,6 +1660,7 @@ grant execute on function public.admin_add_registration(text,text,text,text,text
     }
 
 
+    // --- STUDENT ID (self-generated: YEAR-XXXX) ---
     function initStudentIdField() {
       document.getElementById('studentid-prefix').innerText = STUDENT_ID_PREFIX;
       document.getElementById('studentid-example').innerText = STUDENT_ID_PREFIX + 'A001';
@@ -1739,7 +1753,7 @@ grant execute on function public.admin_add_registration(text,text,text,text,text
         return 'Registration is closed. Your entry was not saved.';
       }
       if (error.code === '23505' || /duplicate key/i.test(msg)) {
-        if (/name_room|name_key/i.test(msg)) return 'This name is already registered.';
+        if (/name_room/i.test(msg)) return 'This name is already registered in that room.';
         if (/student_id/i.test(msg)) {
           isStudentIdAvailable = false;
           setStudentIdBadge('taken', 'ID Taken');
@@ -1876,7 +1890,7 @@ grant execute on function public.admin_add_registration(text,text,text,text,text
     document.addEventListener('DOMContentLoaded', initNameField);
 
 
-    // --- DUPLICATE NAME CHECK (same name in ANY room) ---
+    // --- DUPLICATE NAME CHECK (same name + same room) ---
     let nameDupSeq = 0;
     let nameDupTimer = null;
 
@@ -1885,25 +1899,24 @@ grant execute on function public.admin_add_registration(text,text,text,text,text
       return (n || '').toUpperCase().replace(/[^\p{L}\s]/gu, ' ').split(/\s+/).filter(Boolean).sort().join(' ');
     }
 
-    // Returns { match, verified }. match = the existing record with the same name in ANY room
-    // (a student must not be registered twice, even in a different room).
-    // The 'room' argument is kept so existing callers keep working, but it is no longer used.
+    // Returns { match, verified }. match = the existing record with the same name in that room.
     async function findNameDuplicate(fullName, room, excludeId) {
       const key = nameKey(fullName);
-      if (!key) return { match: null, verified: true };
+      if (!key || !room) return { match: null, verified: true };
       let rows;
       if (supabaseClient) {
         try {
           const { data, error } = await supabaseClient
             .from('exam_registrations')
-            .select('id, full_name, room_number');
+            .select('id, full_name')
+            .eq('room_number', room);
           if (error || !data) return { match: null, verified: false };
           rows = data;
         } catch (e) {
           return { match: null, verified: false };
         }
       } else {
-        rows = JSON.parse(localStorage.getItem('examnet_students') || '[]');
+        rows = JSON.parse(localStorage.getItem('examnet_students') || '[]').filter(s => s.room_number === room);
       }
       const match = rows.find(r => r.id !== excludeId && nameKey(r.full_name) === key) || null;
       return { match, verified: true };
@@ -1929,21 +1942,22 @@ grant execute on function public.admin_add_registration(text,text,text,text,text
 
     async function runNameDupCheck() {
       const seq = ++nameDupSeq;
+      const room = document.getElementById('reg-room').value;
       const full = document.getElementById('reg-fullname').value;
       const last = tidyName(document.getElementById('reg-lastname').value);
       const first = tidyName(document.getElementById('reg-firstname').value);
-      if (last.length < 2 || first.length < 2) { setNameDupStatus(null); return; }
+      if (last.length < 2 || first.length < 2 || !room) { setNameDupStatus(null); return; }
 
-      setNameDupStatus('checking', 'Checking if this name is already registered...');
-      const res = await findNameDuplicate(full, null, null);
+      setNameDupStatus('checking', 'Checking if this name is already registered in ' + room + '...');
+      const res = await findNameDuplicate(full, room, null);
       if (seq !== nameDupSeq) return;   // a newer check replaced this one
 
       if (res.match) {
-        setNameDupStatus('dup', 'Already registered: ' + res.match.full_name + ' is already registered in ' + res.match.room_number + '. You cannot register twice.');
+        setNameDupStatus('dup', 'Already registered: ' + res.match.full_name + ' is already in ' + room + '. You cannot register twice in the same room.');
       } else if (!res.verified) {
         setNameDupStatus('warn', 'Could not verify duplicates right now. The system will check again when you submit.');
       } else {
-        setNameDupStatus('ok', 'No duplicate found.');
+        setNameDupStatus('ok', 'No duplicate found in ' + room + '.');
       }
     }
 
@@ -1964,7 +1978,7 @@ grant execute on function public.admin_add_registration(text,text,text,text,text
 
       const dupRes = await findNameDuplicate(fullName, room, null);
       if (dupRes.match) {
-        setNameDupStatus('dup', 'Already registered: ' + dupRes.match.full_name + ' is already registered in ' + dupRes.match.room_number + '. You cannot register twice.');
+        setNameDupStatus('dup', 'Already registered: ' + dupRes.match.full_name + ' is already in ' + room + '. You cannot register twice in the same room.');
         document.getElementById('name-dup-status').scrollIntoView({ behavior: 'smooth', block: 'center' });
         return;
       }
@@ -1986,16 +2000,6 @@ grant execute on function public.admin_add_registration(text,text,text,text,text
 
       if (!isUsernameAvailable) {
         alert('Username is already taken or being verified. Please enter a unique username.');
-        return;
-      }
-
-      // Fresh check right before saving (never trust the live badge alone)
-      if ((await lookupUsername(username)) === 'taken') {
-        isUsernameAvailable = false;
-        const ub = document.getElementById('username-status-badge');
-        ub.className = "text-xs px-2.5 py-0.5 rounded-md font-bold bg-red-500/20 text-red-400 border border-red-500/30";
-        ub.innerText = "Username Taken";
-        alert('That username was just taken. Please choose another.');
         return;
       }
 
@@ -2150,14 +2154,14 @@ grant execute on function public.admin_add_registration(text,text,text,text,text
       const last = tidyName(admEl('lastname').value);
       const first = tidyName(admEl('firstname').value);
 
-      // 1) same name in any room
-      if (last.length >= 2 && first.length >= 2) {
-        admSetDup('checking', 'Checking if this name is already registered...');
+      // 1) same name in the same room
+      if (last.length >= 2 && first.length >= 2 && room) {
+        admSetDup('checking', 'Checking if this name is already registered in ' + room + '...');
         const res = await findNameDuplicate(admBuildFullName(), room, null);
         if (seq !== admSeq) return;
-        if (res.match) admSetDup('dup', 'Already registered: ' + res.match.full_name + ' is already registered in ' + res.match.room_number + '.');
+        if (res.match) admSetDup('dup', 'Already registered: ' + res.match.full_name + ' is already in ' + room + '.');
         else if (!res.verified) admSetDup('warn', 'Could not verify duplicates right now. It will be checked again when you save.');
-        else admSetDup('ok', 'No duplicate found.');
+        else admSetDup('ok', 'No duplicate found in ' + room + '.');
       } else {
         admSetDup(null);
       }
@@ -2278,7 +2282,7 @@ grant execute on function public.admin_add_registration(text,text,text,text,text
     function admDbError(error) {
       const msg = `${error.message || ''} ${error.details || ''}`;
       if (error.code === '23505' || /duplicate key/i.test(msg)) {
-        if (/name_room|name_key/i.test(msg)) return 'This name is already registered.';
+        if (/name_room/i.test(msg)) return 'This name is already registered in that room.';
         if (/student_id/i.test(msg)) return 'That Student ID was just taken. Use another one.';
         if (/username/i.test(msg)) return 'That username was just taken. Use another one.';
         return 'This record already exists.';
@@ -2357,7 +2361,7 @@ grant execute on function public.admin_add_registration(text,text,text,text,text
       if (!room) { admSetError('Please select a room.'); return; }
       if (!course) { admSetError('Please select a course.'); return; }
       if (!username) { admSetError('Please enter a username.'); admEl('username').focus(); return; }
-      if (!sfx) { admSetError('Please tap Generate to get a Student ID.'); admEl('generate-btn').focus(); return; }
+      if (!sfx) { admSetError('Please enter or generate a Student ID.'); admEl('studentid').focus(); return; }
       if (!STUDENT_ID_REGEX.test(studentId)) {
         admSetError(`Student ID must look like ${STUDENT_ID_PREFIX}A001 (4 letters/digits after the dash).`);
         admEl('studentid').focus();
@@ -2376,7 +2380,7 @@ grant execute on function public.admin_add_registration(text,text,text,text,text
         lookupUsername(username),
         lookupStudentId(studentId)
       ]);
-      if (dup.match) { admSetDup('dup', 'Already registered: ' + dup.match.full_name + ' is already registered in ' + dup.match.room_number + '.'); admSetError('Duplicate name. Not saved.'); done(); return; }
+      if (dup.match) { admSetDup('dup', 'Already registered: ' + dup.match.full_name + ' is already in ' + room + '.'); admSetError('Duplicate name in this room. Not saved.'); done(); return; }
       if (uRes === 'taken') { admSetBadge('username-badge', 'taken', 'Username Taken'); admSetError('That username is already taken.'); done(); return; }
       if (idRes === 'taken') { admSetBadge('studentid-badge', 'taken', 'ID Taken'); admSetError('That Student ID is already taken. Tap Generate for another.'); done(); return; }
 
@@ -2438,10 +2442,10 @@ grant execute on function public.admin_add_registration(text,text,text,text,text
       const studentId = studentIdRaw || null;
 
       const before = studentsData.find(s => s.id === id);
-      if (!before || nameKey(before.full_name) !== nameKey(fullName)) {
+      if (!before || nameKey(before.full_name) !== nameKey(fullName) || before.room_number !== room) {
         const dupEdit = await findNameDuplicate(fullName, room, id);
         if (dupEdit.match) {
-          alert(dupEdit.match.full_name + ' is already registered in ' + dupEdit.match.room_number + '. Change the name.');
+          alert(dupEdit.match.full_name + ' is already registered in ' + room + '. Change the name or the room.');
           return;
         }
       }
@@ -2824,6 +2828,148 @@ grant execute on function public.admin_add_registration(text,text,text,text,text
         setResetProgress('');
         setResetError(err.message || 'Reset failed.');
         setResetBusy(false);
+      }
+    }
+
+
+    // --- SAVE ACCOUNT DETAILS AS AN IMAGE (screenshot) ---
+    // Draws a clean card on a <canvas> from the values already shown in the success modal,
+    // then downloads it as a PNG. Works offline, needs no extra library, and is read-only:
+    // it never touches the registration data, the form, the deadline or the database.
+    async function saveAccountScreenshot() {
+      const btn = document.getElementById('save-shot-btn');
+      const label = document.getElementById('save-shot-label');
+      const setLabel = (t) => { label.textContent = t; };
+      try {
+        btn.disabled = true;
+        setLabel('Preparing image...');
+        try { if (document.fonts && document.fonts.ready) await document.fonts.ready; } catch (_) {}
+
+        const val = (id) => (document.getElementById(id).innerText || '').trim();
+        const rows = [
+          ['Full Name', val('succ-fullname'), '#ffffff'],
+          ['Student ID', val('succ-studentid'), '#6ee7b7'],
+          ['Username', val('succ-username'), '#60a5fa'],
+          ['Room & Course', val('succ-room-course'), '#a5b4fc']
+        ];
+        const password = val('succ-password');
+
+        const FONT = "'Plus Jakarta Sans', 'Segoe UI', Roboto, Arial, sans-serif";
+        const MONO = "ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace";
+        const SCALE = 2, W = 720, PAD = 40, ROW_H = 64;
+        const H = 150 + rows.length * ROW_H + 130 + 90;
+
+        const canvas = document.createElement('canvas');
+        canvas.width = W * SCALE;
+        canvas.height = H * SCALE;
+        const ctx = canvas.getContext('2d');
+        ctx.scale(SCALE, SCALE);
+
+        const rr = (x, y, w, h, r) => {
+          ctx.beginPath();
+          ctx.moveTo(x + r, y);
+          ctx.arcTo(x + w, y, x + w, y + h, r);
+          ctx.arcTo(x + w, y + h, x, y + h, r);
+          ctx.arcTo(x, y + h, x, y, r);
+          ctx.arcTo(x, y, x + w, y, r);
+          ctx.closePath();
+        };
+        // Shrinks the text until it fits the available width
+        const fit = (text, weight, size, family, maxW) => {
+          let sz = size;
+          do { ctx.font = weight + ' ' + sz + 'px ' + family; sz -= 1; }
+          while (ctx.measureText(text).width > maxW && sz > 10);
+        };
+
+        // Background
+        ctx.fillStyle = '#0b0f19';
+        ctx.fillRect(0, 0, W, H);
+
+        // Card
+        rr(16, 16, W - 32, H - 32, 24);
+        ctx.fillStyle = '#111827';
+        ctx.fill();
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = 'rgba(16,185,129,0.45)';
+        ctx.stroke();
+
+        // Title
+        ctx.textBaseline = 'alphabetic';
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '800 28px ' + FONT;
+        ctx.fillText('ExamNet Registration', W / 2, 70);
+        ctx.fillStyle = '#34d399';
+        ctx.font = '700 15px ' + FONT;
+        ctx.fillText('\u2713 Registration Complete', W / 2, 98);
+
+        // Detail rows
+        let y = 130;
+        rows.forEach((r, i) => {
+          ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(PAD, y);
+          ctx.lineTo(W - PAD, y);
+          ctx.stroke();
+
+          ctx.textAlign = 'left';
+          ctx.fillStyle = '#9ca3af';
+          ctx.font = '600 15px ' + FONT;
+          ctx.fillText(r[0], PAD, y + 38);
+
+          ctx.textAlign = 'right';
+          ctx.fillStyle = r[2];
+          fit(r[1], '700', 20, (i === 1 || i === 2) ? MONO : FONT, W - PAD * 2 - 150);
+          ctx.fillText(r[1], W - PAD, y + 38);
+          y += ROW_H;
+        });
+
+        // Password box
+        y += 14;
+        rr(PAD, y, W - PAD * 2, 84, 14);
+        ctx.fillStyle = 'rgba(59,130,246,0.14)';
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(59,130,246,0.45)';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+        ctx.textAlign = 'left';
+        ctx.fillStyle = '#93c5fd';
+        ctx.font = '700 12px ' + FONT;
+        ctx.fillText('INITIAL DEFAULT PASSWORD', PAD + 20, y + 32);
+        ctx.fillStyle = '#ffffff';
+        fit(password, '800', 28, MONO, W - PAD * 2 - 40);
+        ctx.fillText(password, PAD + 20, y + 64);
+
+        // Footer
+        y += 84 + 36;
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#fbbf24';
+        ctx.font = '600 13px ' + FONT;
+        ctx.fillText('Use this temporary password for your first login. Keep this image private.', W / 2, y);
+        ctx.fillStyle = '#6b7280';
+        ctx.font = '500 12px ' + FONT;
+        ctx.fillText('Saved on ' + new Date().toLocaleString(), W / 2, y + 24);
+
+        const blob = await new Promise((res) => canvas.toBlob(res, 'image/png'));
+        if (!blob) throw new Error('Could not create the image');
+
+        const safeId = (rows[1][1] || 'Registration').replace(/[^A-Za-z0-9_-]/g, '');
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'ExamNet_' + safeId + '.png';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+
+        setLabel('Saved! Check your Downloads / Gallery');
+      } catch (err) {
+        console.error('Screenshot failed', err);
+        setLabel('Could not save. Please screenshot manually');
+      } finally {
+        btn.disabled = false;
+        setTimeout(() => setLabel('Save Screenshot'), 3500);
       }
     }
 
