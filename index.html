@@ -8,15 +8,18 @@
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
   
-  <!-- SheetJS (XLSX) for Multi-Sheet Excel Export (xlsx-js-style = same API + cell styling) -->
-  <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
-  
+  <!-- Excel library (xlsx-js-style): NOT loaded here. It is loaded on demand by frontend/js/19-excel-export.js (admins only). -->
+
   <!-- Supabase JS Client -->
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.0"></script>
   
   <!-- Lucide Icons -->
-  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://unpkg.com/lucide@1.70.0"></script>
 
+  <!-- Font: linked here (not @import in the CSS) so it downloads in parallel with the stylesheet -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" />
   <link rel="stylesheet" href="frontend/css/styles.css" />
 </head>
 <body class="min-h-screen flex flex-col justify-between selection:bg-blue-600 selection:text-white">
@@ -319,7 +322,7 @@
           </button>
 
           <!-- Excel Export Button -->
-          <button onclick="exportMultiSheetExcel()" class="px-3.5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs transition flex items-center gap-1.5 shadow-lg shadow-emerald-600/20">
+          <button onclick="exportExcelFromButton()" class="px-3.5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs transition flex items-center gap-1.5 shadow-lg shadow-emerald-600/20">
             <i data-lucide="file-spreadsheet" class="w-4 h-4"></i>
             Export Excel
           </button>

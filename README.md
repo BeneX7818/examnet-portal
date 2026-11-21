@@ -38,5 +38,11 @@ examnet-portal/
 | 20-reset-data | Reset data (with backup) |
 | 21-account-image, 22-helpers | Account image download, shared helpers |
 
+## Libraries (index.html)
+- Supabase and Lucide are **pinned** to exact versions, so a surprise CDN update can't change the page. To upgrade, change the version number in `index.html`, then test.
+- The Excel library is **not** in `index.html`. `19-excel-export.js` loads it on demand (and `08-router.js` warms it up for admins).
+  Any new code that calls `exportMultiSheetExcel()` must `await ensureXlsx()` first.
+- The Google Font is a `<link>` in `index.html` (not an `@import` in the CSS) so it loads in parallel.
+
 ## Backend changes
 See `backend/README.md`. After adding or editing a migration, run `node scripts/build-sql.js`.

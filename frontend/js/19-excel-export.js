@@ -1,3 +1,36 @@
+    // --- EXCEL LIBRARY: loaded on demand (admins only; students never download it) ---
+    // The export code below is unchanged and still synchronous. Anything that calls it must
+    // `await ensureXlsx()` first (the Export button and the reset backup both do).
+    const XLSX_LIB_URL = 'https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js';
+    let xlsxPromise = null;
+
+    function ensureXlsx() {
+      if (window.XLSX) return Promise.resolve();
+      if (!xlsxPromise) {
+        xlsxPromise = new Promise((resolve, reject) => {
+          const s = document.createElement('script');
+          s.src = XLSX_LIB_URL;
+          s.onload = () => {
+            if (window.XLSX) { resolve(); return; }
+            xlsxPromise = null; s.remove();
+            reject(new Error('The Excel library did not start correctly. Please try again.'));
+          };
+          s.onerror = () => {
+            xlsxPromise = null; s.remove();   // allow a retry on the next click
+            reject(new Error('Could not load the Excel library. Check your internet connection and try again.'));
+          };
+          document.head.appendChild(s);
+        });
+      }
+      return xlsxPromise;
+    }
+
+    async function exportExcelFromButton() {
+      try { await ensureXlsx(); }
+      catch (err) { alert(err.message); return; }
+      exportMultiSheetExcel();
+    }
+
     // --- EXCEL STYLING HELPERS (header look matches the import template) ---
     const XL_HEADER_BG = "3B5BDB";
     const XL_BORDER = { style: "thin", color: { rgb: "B8C4EE" } };

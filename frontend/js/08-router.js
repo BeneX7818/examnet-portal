@@ -21,6 +21,7 @@
         document.getElementById('view-dashboard').classList.remove('hidden');
         document.getElementById('admin-logout-btn').classList.remove('hidden');
         loadRegistrations();
+        ensureXlsx().catch(() => {});   // warm up the Excel library for the admin (the click retries if this fails)
       } else {
         document.getElementById('view-register').classList.remove('hidden');
       }

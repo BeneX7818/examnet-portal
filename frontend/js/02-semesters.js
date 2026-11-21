@@ -326,6 +326,7 @@
         tag = 'BACKUP_AllSemesters_Before_Reset';
       }
       if (!rows.length) return true;
+      await ensureXlsx();   // must finish BEFORE the swap below: the export reads studentsData synchronously
       const keep = studentsData;
       studentsData = rows;
       try { return exportMultiSheetExcel({ silent: true, fileTag: tag, termLabel: label }); }
