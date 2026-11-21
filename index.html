@@ -1384,7 +1384,7 @@ grant execute on function public.admin_add_registration(text,text,text,text,text
         if (!st.open) {
           banner.className = base + 'bg-red-500/10 border-red-500/30 text-red-200';
           title.textContent = 'Registration is closed';
-          if (st.reason === 'manual') sub.textContent = 'The administrator has closed registration. Please contact your instructor if you still need to register.';
+          if (st.reason === 'manual') sub.textContent = 'Registration is currently closed by the administrator. Please contact your instructor if you still need to register.';
           else if (regConfig.closes_at) sub.textContent = 'The deadline was ' + fmtDeadline(regConfig.closes_at) + ' (Philippine time). Please contact your instructor if you still need to register.';
           else sub.textContent = 'Please contact your instructor if you still need to register.';
           form.inert = true;
