@@ -3277,6 +3277,10 @@ grant execute on function public.rename_term(uuid,text) to anon, authenticated;<
         ["Course", "Total Students"]
       ];
 
+      // Row of the "Course | Total Students" header. Looked up, not hard-coded, because the
+      // optional "Semester:" row above shifts everything below it down by one.
+      const courseHeaderRow = summaryData.length - 1;
+
       const courseCounts = {};
       const roomCounts = {};
 
@@ -3292,15 +3296,15 @@ grant execute on function public.rename_term(uuid,text) to anon, authenticated;<
 
       const summarySheet = XLSX.utils.aoa_to_sheet(summaryData);
       // Style: bold title, then each breakdown table (header row + rows) like the other sheets
-      summarySheet['A1'].s = { font: { bold: true, sz: 14, name: "Calibri" } };
+      const setCellStyle = (r, st) => { const c = summarySheet[XLSX.utils.encode_cell({ r, c: 0 })]; if (c) c.s = st; };
+      setCellStyle(0, { font: { bold: true, sz: 14, name: "Calibri" } });
       const courseCount = Object.keys(courseCounts).length;
       const roomCount = Object.keys(roomCounts).length;
-      const courseHeaderRow = 5; // "Course" | "Total Students"
       styleTableRange(summarySheet, courseHeaderRow, 0, 1, courseHeaderRow + courseCount);
       const roomHeaderRow = courseHeaderRow + courseCount + 3; // after blank row + section title
       styleTableRange(summarySheet, roomHeaderRow, 0, 1, roomHeaderRow + roomCount);
-      summarySheet['A5'].s = { font: { bold: true, sz: 12, name: "Calibri" } };
-      summarySheet[XLSX.utils.encode_cell({ r: roomHeaderRow - 1, c: 0 })].s = { font: { bold: true, sz: 12, name: "Calibri" } };
+      setCellStyle(courseHeaderRow - 1, { font: { bold: true, sz: 12, name: "Calibri" } });   // "Course Breakdown"
+      setCellStyle(roomHeaderRow - 1, { font: { bold: true, sz: 12, name: "Calibri" } });     // "Room Assignment Breakdown"
       summarySheet['!cols'] = [{ wch: 34 }, { wch: 28 }];
       XLSX.utils.book_append_sheet(wb, summarySheet, "Overall Summary");
 
