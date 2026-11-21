@@ -91,6 +91,12 @@
           </div>
           <h1 class="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">ExamNet Entry Form</h1>
           <p class="text-xs sm:text-sm text-gray-400 mt-1">Ensure all details match your official student record before submitting.</p>
+          <div id="reg-term-label" class="hidden mt-2.5">
+            <span class="inline-flex items-center gap-1.5 text-[11px] font-semibold text-sky-300 bg-sky-500/10 border border-sky-500/20 rounded-full px-3 py-1">
+              <i data-lucide="calendar-days" class="w-3.5 h-3.5"></i>
+              <span id="reg-term-label-text"></span>
+            </span>
+          </div>
         </div>
 
         <!-- Registration deadline banner (shown only when a deadline is set or registration is closed) -->
@@ -295,6 +301,17 @@
             Exam Registrations Control
           </h1>
           <p class="text-xs text-gray-400 mt-0.5">Manage examinee records & export multi-tab excel sheets sorted by room & course</p>
+
+          <!-- Semester selector (hidden until the Semester SQL has been run) -->
+          <div id="term-bar" class="hidden mt-3 flex flex-wrap items-center gap-2">
+            <span class="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Semester</span>
+            <select id="term-select" onchange="onTermSelectChange(this.value)" class="px-3 py-1.5 rounded-lg glass-input text-xs font-semibold max-w-[16rem]"></select>
+            <button type="button" id="term-make-active-btn" onclick="makeSelectedTermActive()" class="hidden px-2.5 py-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/20 font-semibold text-[11px] transition">Make this active</button>
+            <button type="button" onclick="openNewTermModal()" class="px-2.5 py-1.5 rounded-lg bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30 font-semibold text-[11px] transition flex items-center gap-1">
+              <i data-lucide="calendar-plus" class="w-3.5 h-3.5"></i>
+              Start New Semester
+            </button>
+          </div>
         </div>
 
         <div class="flex flex-wrap items-center gap-2.5">
@@ -340,6 +357,12 @@
             Reset Data
           </button>
         </div>
+      </div>
+
+      <!-- Viewing an older semester -->
+      <div id="term-archived-banner" class="hidden rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs text-amber-200 flex items-start gap-3">
+        <i data-lucide="archive" class="w-4 h-4 shrink-0 mt-0.5"></i>
+        <p id="term-archived-text" class="leading-relaxed"></p>
       </div>
 
       <!-- Quick Metrics Grid -->
@@ -757,8 +780,20 @@
       </div>
 
       <div class="rounded-xl border border-red-500/30 bg-red-500/10 px-3.5 py-3 text-xs text-red-200 leading-relaxed">
-        <p class="font-bold">This permanently deletes <span id="reset-count">0</span> examinee record(s).</p>
+        <p class="font-bold">This permanently deletes <span id="reset-count">0</span> examinee record(s)<span id="reset-scope-text"></span>.</p>
         <p class="mt-1 opacity-90">Kept: the admin password and your Supabase connection settings. This cannot be undone.</p>
+      </div>
+
+      <div id="reset-scope-wrap" class="hidden space-y-2 text-xs text-gray-300 rounded-xl border border-gray-700/60 bg-gray-900/40 px-3.5 py-3">
+        <p class="font-semibold text-white">What to reset</p>
+        <label class="flex items-start gap-2.5 cursor-pointer">
+          <input type="radio" name="reset-scope" value="term" checked onchange="updateResetScopeText()" class="mt-0.5 accent-red-500" />
+          <span><span class="font-semibold text-white">This semester only:</span> <span id="reset-scope-term-label"></span>. Other semesters stay untouched.</span>
+        </label>
+        <label class="flex items-start gap-2.5 cursor-pointer">
+          <input type="radio" name="reset-scope" value="all" onchange="updateResetScopeText()" class="mt-0.5 accent-red-500" />
+          <span><span class="font-semibold text-white">Every semester</span> (all records from all semesters). Semester names are kept.</span>
+        </label>
       </div>
 
       <div class="space-y-2.5 text-xs text-gray-300">
@@ -783,7 +818,49 @@
 
         <div class="flex items-center justify-end space-x-2 pt-1">
           <button type="button" id="reset-cancel-btn" onclick="closeResetModal()" class="px-4 py-2 rounded-xl bg-gray-800 text-gray-300 text-xs font-semibold">Cancel</button>
-          <button type="submit" id="reset-submit-btn" class="px-5 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-bold shadow-lg shadow-red-600/30 disabled:opacity-50 disabled:cursor-not-allowed">Reset Everything</button>
+          <button type="submit" id="reset-submit-btn" class="px-5 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-bold shadow-lg shadow-red-600/30 disabled:opacity-50 disabled:cursor-not-allowed">Delete Records</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ========================================== -->
+  <!-- MODAL: START NEW SEMESTER -->
+  <!-- ========================================== -->
+  <div id="new-term-modal" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="glass-card w-full max-w-md rounded-2xl p-6 relative space-y-4 max-h-[90vh] overflow-y-auto">
+      <button type="button" onclick="closeModal('new-term-modal')" class="absolute top-4 right-4 text-gray-400 hover:text-white">
+        <i data-lucide="x" class="w-5 h-5"></i>
+      </button>
+
+      <div class="flex items-center space-x-3">
+        <div class="w-10 h-10 rounded-xl bg-blue-500/10 text-blue-400 flex items-center justify-center border border-blue-500/20">
+          <i data-lucide="calendar-plus" class="w-5 h-5"></i>
+        </div>
+        <div>
+          <h3 class="text-lg font-bold text-white">Start New Semester</h3>
+          <p class="text-xs text-gray-400">Students can register again without touching old records</p>
+        </div>
+      </div>
+
+      <div class="rounded-xl border border-blue-500/30 bg-blue-500/10 px-3.5 py-3 text-xs text-blue-100 leading-relaxed">
+        <p>The new semester becomes the <span class="font-bold">active</span> one: new registrations go into it. Current records stay safe under their own semester and remain viewable and exportable from the selector.</p>
+        <p class="mt-1.5 opacity-90">Registration will be opened with no deadline. Set a new deadline afterwards if you need one. Rooms and courses are kept.</p>
+      </div>
+
+      <form onsubmit="handleNewTerm(event)" class="space-y-3">
+        <div>
+          <label class="block text-xs font-semibold text-gray-300 mb-1">Semester name</label>
+          <input type="text" id="nt-label" required maxlength="60" autocomplete="off" placeholder="e.g. AY 2026-2027, 2nd Sem" class="w-full px-3.5 py-2.5 rounded-xl glass-input text-xs" />
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-gray-300 mb-1">Admin Password</label>
+          <input type="password" id="nt-pass" required autocomplete="off" placeholder="Enter admin password to proceed" class="w-full px-3.5 py-2.5 rounded-xl glass-input text-xs" />
+          <p id="nt-error" class="hidden mt-1.5 text-[11px] text-red-400 font-semibold"></p>
+        </div>
+        <div class="flex items-center justify-end space-x-2 pt-1">
+          <button type="button" onclick="closeModal('new-term-modal')" class="px-4 py-2 rounded-xl bg-gray-800 text-gray-300 text-xs font-semibold">Cancel</button>
+          <button type="submit" id="nt-submit-btn" class="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold shadow-lg shadow-blue-600/30 disabled:opacity-50 disabled:cursor-not-allowed">Start Semester</button>
         </div>
       </form>
     </div>
@@ -945,7 +1022,120 @@ end;
 $$;
 
 revoke all on function public.admin_add_registration(text,text,text,text,text,text,text) from public;
-grant execute on function public.admin_add_registration(text,text,text,text,text,text,text) to anon, authenticated;</pre>
+grant execute on function public.admin_add_registration(text,text,text,text,text,text,text) to anon, authenticated;
+
+-- ========== SEMESTER TERMS (run once) ==========
+-- Every registration belongs to a semester. Student IDs stay unique across ALL
+-- semesters (on purpose); usernames and name+room are unique per semester.
+create table if not exists public.exam_terms (
+  id uuid primary key default gen_random_uuid(),
+  label text not null,
+  is_active boolean not null default false,
+  created_at timestamptz not null default now()
+);
+create unique index if not exists exam_terms_label_key on public.exam_terms (lower(label));
+create unique index if not exists exam_terms_one_active on public.exam_terms (is_active) where is_active;
+
+alter table public.exam_terms enable row level security;
+drop policy if exists "Allow public read exam_terms" on public.exam_terms;
+create policy "Allow public read exam_terms" on public.exam_terms for select using (true);
+-- No insert/update/delete policy: semesters change only through the functions below.
+
+-- Your current records become the first semester:
+insert into public.exam_terms (label, is_active)
+select 'AY 2026-2027, 1st Sem', true
+where not exists (select 1 from public.exam_terms);
+
+alter table public.exam_registrations add column if not exists term_id uuid references public.exam_terms(id);
+update public.exam_registrations
+set term_id = (select id from public.exam_terms where is_active limit 1)
+where term_id is null;
+alter table public.exam_registrations alter column term_id set not null;
+create index if not exists exam_registrations_term_id_idx on public.exam_registrations (term_id);
+
+-- Username: unique per semester instead of globally
+do $$
+declare r record;
+begin
+  for r in
+    select i.indexrelid::regclass as idx, c.conname
+    from pg_index i
+    join pg_attribute a on a.attrelid = i.indrelid and a.attnum = i.indkey[0]
+    left join pg_constraint c on c.conindid = i.indexrelid and c.conrelid = i.indrelid
+    where i.indrelid = 'public.exam_registrations'::regclass
+      and i.indisunique and not i.indisprimary
+      and i.indnatts = 1 and a.attname = 'username'
+  loop
+    if r.conname is not null then
+      execute format('alter table public.exam_registrations drop constraint %I', r.conname);
+    else
+      execute format('drop index %s', r.idx);
+    end if;
+  end loop;
+end $$;
+create unique index if not exists exam_registrations_term_username_key
+  on public.exam_registrations (term_id, username);
+
+-- Same name in the same room: unique per semester (only if you had that rule before)
+do $$
+begin
+  if exists (select 1 from pg_indexes where schemaname = 'public' and indexname = 'exam_registrations_name_room_key') then
+    drop index public.exam_registrations_name_room_key;
+    create unique index exam_registrations_name_room_key
+      on public.exam_registrations (term_id, upper(trim(full_name)), room_number);
+  end if;
+end $$;
+
+-- New registrations always land in the ACTIVE semester (the database decides,
+-- so an old open page or a direct API call cannot write into an old semester).
+create or replace function public.set_registration_term()
+returns trigger language plpgsql security definer
+set search_path = public as $$
+declare t uuid;
+begin
+  select id into t from public.exam_terms where is_active limit 1;
+  if t is null then
+    raise exception 'No active semester. Start a semester from the Admin Dashboard.';
+  end if;
+  new.term_id := t;
+  return new;
+end;
+$$;
+drop trigger if exists exam_registrations_set_term on public.exam_registrations;
+create trigger exam_registrations_set_term
+  before insert on public.exam_registrations
+  for each row execute function public.set_registration_term();
+
+create or replace function public.start_new_term(p_label text)
+returns uuid language plpgsql security definer
+set search_path = public as $$
+declare new_id uuid;
+begin
+  if p_label is null or length(trim(p_label)) = 0 then
+    raise exception 'Semester name is required';
+  end if;
+  update public.exam_terms set is_active = false where is_active;
+  insert into public.exam_terms (label, is_active) values (trim(p_label), true) returning id into new_id;
+  return new_id;
+end;
+$$;
+
+create or replace function public.set_active_term(p_id uuid)
+returns void language plpgsql security definer
+set search_path = public as $$
+begin
+  if not exists (select 1 from public.exam_terms where id = p_id) then
+    raise exception 'Semester not found';
+  end if;
+  update public.exam_terms set is_active = false where is_active and id != p_id;
+  update public.exam_terms set is_active = true where id = p_id;
+end;
+$$;
+
+revoke all on function public.start_new_term(text) from public;
+revoke all on function public.set_active_term(uuid) from public;
+grant execute on function public.start_new_term(text) to anon, authenticated;
+grant execute on function public.set_active_term(uuid) to anon, authenticated;</pre>
         </div>
 
         <div class="flex items-center justify-end space-x-3 pt-2">
@@ -1036,6 +1226,303 @@ grant execute on function public.admin_add_registration(text,text,text,text,text
     let isUsernameAvailable = false;
     let usernameDebounceTimer = null;
     let isStudentIdAvailable = false;
+
+    // =====================================================================
+    // SEMESTERS (TERMS)
+    // Every registration belongs to a semester. New registrations always go
+    // to the ACTIVE semester. The dashboard shows one semester at a time.
+    // If the Semester SQL has not been run yet, everything below stays
+    // dormant ("legacy" mode) and the portal works exactly as before.
+    // Student IDs stay unique across ALL semesters (deliberate).
+    // =====================================================================
+    const DEFAULT_TERM_LABEL = 'AY 2026-2027, 1st Sem';
+    let terms = [];
+    let termsReady = false;          // true when semesters are available
+    let termsState = 'unknown';      // 'ok' | 'legacy' (SQL not run) | 'error' (could not load)
+    let activeTermId = null;
+    let selectedTermId = null;       // semester shown on the dashboard
+    let termsPromise = null;
+    let ntBusy = false;
+
+    function ensureTermsLoaded() {
+      if (!termsPromise) termsPromise = loadTerms();
+      return termsPromise;
+    }
+
+    function readLocalStudents() {
+      try { return JSON.parse(localStorage.getItem('examnet_students') || '[]'); } catch (_) { return []; }
+    }
+
+    function readLocalTerms() {
+      let list = [];
+      try { list = JSON.parse(localStorage.getItem('examnet_terms') || '[]'); } catch (_) {}
+      if (!Array.isArray(list) || !list.length) {
+        list = [{ id: crypto.randomUUID(), label: DEFAULT_TERM_LABEL, is_active: true, created_at: new Date().toISOString() }];
+        localStorage.setItem('examnet_terms', JSON.stringify(list));
+      }
+      // Records saved before semesters existed belong to the first semester
+      const all = readLocalStudents();
+      let changed = false;
+      all.forEach(st => { if (!st.term_id) { st.term_id = list[0].id; changed = true; } });
+      if (changed) localStorage.setItem('examnet_students', JSON.stringify(all));
+      return list;
+    }
+
+    async function loadTerms() {
+      let list = null;
+      let state = 'ok';
+      if (supabaseClient) {
+        try {
+          const { data, error } = await supabaseClient.from('exam_terms').select('*').order('created_at', { ascending: true });
+          if (error) {
+            const m = `${error.message || ''} ${error.code || ''}`;
+            const missing = error.code === '42P01' || error.code === 'PGRST205' ||
+              (/exam_terms/i.test(m) && /(does not exist|schema cache|could not find)/i.test(m));
+            state = missing ? 'legacy' : 'error';
+            console.warn('Semesters unavailable:', error.message);
+          } else if (!data || !data.length) {
+            state = 'legacy';
+          } else {
+            list = data;
+          }
+        } catch (e) {
+          state = 'error';
+        }
+      } else {
+        list = readLocalTerms();
+      }
+
+      termsState = state;
+      if (list) {
+        terms = list;
+        termsReady = true;
+        const act = list.find(t => t.is_active) || list[list.length - 1];
+        activeTermId = act.id;
+        if (!selectedTermId || !list.some(t => t.id === selectedTermId)) selectedTermId = activeTermId;
+      } else {
+        terms = [];
+        termsReady = false;
+        activeTermId = null;
+        selectedTermId = null;
+        if (state === 'error') termsPromise = null; // try again next time
+      }
+      renderTermUI();
+    }
+
+    function termLabelById(id) {
+      const t = terms.find(x => x.id === id);
+      return t ? t.label : '';
+    }
+    function currentTermLabel() { return termsReady ? termLabelById(selectedTermId) : ''; }
+
+    // The semester that duplicate checks should look at:
+    // the dashboard looks at the semester being viewed; the public form at the active one.
+    function getCheckTermId() {
+      if (!termsReady) return null;
+      return (window.location.hash === '#dashboard') ? selectedTermId : activeTermId;
+    }
+    function termFilter(query, termId) {
+      return (termsReady && termId) ? query.eq('term_id', termId) : query;
+    }
+    function termMatches(row, termId) {
+      return !termsReady || !termId || row.term_id === termId;
+    }
+
+    function renderTermUI() {
+      const bar = document.getElementById('term-bar');
+      const banner = document.getElementById('term-archived-banner');
+      const regLbl = document.getElementById('reg-term-label');
+      if (!bar || !banner || !regLbl) return;
+
+      if (!termsReady) {
+        bar.classList.add('hidden');
+        banner.classList.add('hidden');
+        regLbl.classList.add('hidden');
+        return;
+      }
+
+      bar.classList.remove('hidden');
+      const sel = document.getElementById('term-select');
+      const ordered = terms.slice().sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+      sel.innerHTML = ordered.map(t =>
+        `<option value="${escapeHtml(t.id)}"${t.id === selectedTermId ? ' selected' : ''}>${escapeHtml(t.label)}${t.is_active ? ' (active)' : ''}</option>`
+      ).join('');
+
+      const viewingOld = selectedTermId !== activeTermId;
+      document.getElementById('term-make-active-btn').classList.toggle('hidden', !viewingOld);
+      banner.classList.toggle('hidden', !viewingOld);
+      if (viewingOld) {
+        document.getElementById('term-archived-text').textContent =
+          `You are viewing "${termLabelById(selectedTermId)}", which is not the active semester. New registrations go to "${termLabelById(activeTermId)}". Add Student is disabled here.`;
+      }
+
+      document.getElementById('reg-term-label-text').textContent = 'Registering for: ' + termLabelById(activeTermId);
+      regLbl.classList.remove('hidden');
+    }
+
+    function onTermSelectChange(id) {
+      selectedTermId = id;
+      loadRegistrations();
+    }
+
+    function saveLocalTerms(list) {
+      localStorage.setItem('examnet_terms', JSON.stringify(list));
+    }
+
+    function setNtError(msg) {
+      const el = document.getElementById('nt-error');
+      el.textContent = msg;
+      el.classList.toggle('hidden', !msg);
+    }
+
+    function openNewTermModal() {
+      document.getElementById('nt-label').value = '';
+      document.getElementById('nt-pass').value = '';
+      setNtError('');
+      openModal('new-term-modal');
+      setTimeout(() => document.getElementById('nt-label').focus(), 50);
+    }
+
+    async function handleNewTerm(e) {
+      e.preventDefault();
+      if (ntBusy) return;
+      setNtError('');
+
+      const label = document.getElementById('nt-label').value.trim().replace(/\s+/g, ' ');
+      const typed = document.getElementById('nt-pass').value;
+      if (label.length < 3 || label.length > 60) { setNtError('Enter a semester name between 3 and 60 characters.'); return; }
+      if (terms.some(t => t.label.toLowerCase() === label.toLowerCase())) { setNtError('A semester with that name already exists.'); return; }
+      if (typed !== getStoredAdminPassword()) {
+        document.getElementById('nt-pass').value = '';
+        setNtError('Incorrect admin password. Nothing was changed.');
+        return;
+      }
+
+      ntBusy = true;
+      const btn = document.getElementById('nt-submit-btn');
+      btn.disabled = true;
+      btn.textContent = 'Starting...';
+      try {
+        if (supabaseClient) {
+          const { error } = await supabaseClient.rpc('start_new_term', { p_label: label });
+          if (error) {
+            if (error.code === 'PGRST202' || /could not find the function|schema cache/i.test(error.message || '')) {
+              throw new Error('The semester functions are not installed yet. Open Supabase Settings, copy the SQL, and run the "SEMESTER TERMS" block once.');
+            }
+            if (error.code === '23505') throw new Error('A semester with that name already exists.');
+            throw new Error(error.message || 'Could not start the semester.');
+          }
+        } else {
+          const list = readLocalTerms().map(t => ({ ...t, is_active: false }));
+          list.push({ id: crypto.randomUUID(), label: label, is_active: true, created_at: new Date().toISOString() });
+          saveLocalTerms(list);
+        }
+
+        // Registration opens for the new semester, with no deadline
+        regConfig = { closes_at: null, manual_closed: false };
+        document.getElementById('dl-input').value = '';
+        await saveRegistrationConfig();
+
+        termsPromise = null;
+        selectedTermId = null;
+        await ensureTermsLoaded();
+        await loadRegistrations();
+        closeModal('new-term-modal');
+        alert('"' + label + '" is now the active semester. Registration is open with no deadline (set one from Registration Deadline if needed). Previous records were kept under their own semester.');
+      } catch (err) {
+        setNtError(err.message || 'Could not start the semester.');
+      } finally {
+        ntBusy = false;
+        btn.disabled = false;
+        btn.textContent = 'Start Semester';
+      }
+    }
+
+    async function makeSelectedTermActive() {
+      const id = selectedTermId;
+      const label = termLabelById(id);
+      if (!id || id === activeTermId) return;
+      if (!confirm('Make "' + label + '" the active semester?\n\nNew student registrations will go into it. Records in other semesters are not changed.')) return;
+      try {
+        if (supabaseClient) {
+          const { error } = await supabaseClient.rpc('set_active_term', { p_id: id });
+          if (error) throw new Error(error.message || 'Could not change the active semester.');
+        } else {
+          saveLocalTerms(readLocalTerms().map(t => ({ ...t, is_active: t.id === id })));
+        }
+        termsPromise = null;
+        await ensureTermsLoaded();
+        await loadRegistrations();
+      } catch (err) {
+        alert(err.message || 'Could not change the active semester.');
+      }
+    }
+
+    // All registrations from every semester (used by the full-reset backup and counts)
+    async function fetchAllRegistrationsRaw() {
+      if (!supabaseClient) return readLocalStudents();
+      const rows = [];
+      const page = 1000;
+      for (let from = 0; ; from += page) {
+        const { data, error } = await supabaseClient.from('exam_registrations').select('*')
+          .order('created_at', { ascending: true }).range(from, from + page - 1);
+        if (error) throw new Error('Could not read all semesters: ' + error.message);
+        rows.push(...data);
+        if (data.length < page) break;
+      }
+      return rows;
+    }
+
+    async function getTotalRegistrationCount() {
+      if (supabaseClient) {
+        const { count, error } = await supabaseClient.from('exam_registrations').select('id', { count: 'exact', head: true });
+        return error ? '?' : (count || 0);
+      }
+      return readLocalStudents().length;
+    }
+
+    async function backupBeforeReset(scope) {
+      let rows = studentsData, label = null, tag = 'BACKUP_Before_Reset';
+      if (scope === 'all' && termsReady) {
+        rows = await fetchAllRegistrationsRaw();
+        label = 'All semesters';
+        tag = 'BACKUP_AllSemesters_Before_Reset';
+      }
+      if (!rows.length) return true;
+      const keep = studentsData;
+      studentsData = rows;
+      try { return exportMultiSheetExcel({ silent: true, fileTag: tag, termLabel: label }); }
+      finally { studentsData = keep; }
+    }
+
+    function getResetScope() {
+      const r = document.querySelector('input[name="reset-scope"]:checked');
+      return (termsReady && r) ? r.value : 'all';
+    }
+
+    function initResetScope() {
+      const wrap = document.getElementById('reset-scope-wrap');
+      wrap.classList.toggle('hidden', !termsReady);
+      const radios = document.querySelectorAll('input[name="reset-scope"]');
+      radios.forEach(r => { r.checked = (r.value === 'term'); });
+      document.getElementById('reset-scope-term-label').textContent = '"' + currentTermLabel() + '"';
+      updateResetScopeText();
+    }
+
+    async function updateResetScopeText() {
+      const countEl = document.getElementById('reset-count');
+      const txt = document.getElementById('reset-scope-text');
+      if (!termsReady) { countEl.innerText = studentsData.length; txt.textContent = ''; return; }
+      if (getResetScope() === 'all') {
+        countEl.innerText = '...';
+        txt.textContent = ' across every semester';
+        const n = await getTotalRegistrationCount();
+        if (getResetScope() === 'all') countEl.innerText = n;
+      } else {
+        countEl.innerText = studentsData.length;
+        txt.textContent = ' in "' + currentTermLabel() + '"';
+      }
+    }
 
     // Configurable Dynamic Lists
     const DEFAULT_COURSES = ["BSIT", "BSCS", "BSIS", "BSEMC", "BSCPE"];
@@ -1535,6 +2022,7 @@ grant execute on function public.admin_add_registration(text,text,text,text,text
 
     // --- SUPABASE CLIENT SETUP ---
     function initSupabaseConnection() {
+      termsPromise = null;
       const url = localStorage.getItem('examnet_sp_url') || 'https://btlqfacbxdilyaejcywf.supabase.co';
       const key = localStorage.getItem('examnet_sp_key') || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ0bHFmYWNieGRpbHlhZWpjeXdmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTM2MTkzNzEsImV4cCI6MjEwOTE5NTM3MX0.VOprGy2aPUeQkDX2feiXeJgzLbDbdD13I9DNcJMHPxw';
 
@@ -1628,13 +2116,15 @@ grant execute on function public.admin_add_registration(text,text,text,text,text
     async function checkUsernameAvailability(username) {
       const badge = document.getElementById('username-status-badge');
       let isTaken = false;
+      await ensureTermsLoaded();
+      const termId = getCheckTermId();
 
       if (supabaseClient) {
         try {
-          const { data, error } = await supabaseClient
+          const { data, error } = await termFilter(supabaseClient
             .from('exam_registrations')
             .select('id')
-            .ilike('username', username)
+            .ilike('username', username), termId)
             .limit(1);
 
           if (!error && data && data.length > 0) {
@@ -1644,7 +2134,7 @@ grant execute on function public.admin_add_registration(text,text,text,text,text
           console.error("Availability check error:", e);
         }
       } else {
-        const localData = JSON.parse(localStorage.getItem('examnet_students') || '[]');
+        const localData = readLocalStudents().filter(s => termMatches(s, termId));
         isTaken = localData.some(s => s.username.toLowerCase() === username.toLowerCase());
       }
 
@@ -1773,11 +2263,12 @@ grant execute on function public.admin_add_registration(text,text,text,text,text
 
     // --- DATA LOADING & PERSISTENCE ---
     async function loadRegistrations() {
+      await ensureTermsLoaded();
       if (supabaseClient) {
         try {
-          const { data, error } = await supabaseClient
+          const { data, error } = await termFilter(supabaseClient
             .from('exam_registrations')
-            .select('*')
+            .select('*'), selectedTermId)
             .order('created_at', { ascending: false });
 
           if (!error && data) {
@@ -1795,14 +2286,23 @@ grant execute on function public.admin_add_registration(text,text,text,text,text
 
       renderTable();
       updateMetrics();
+      renderTermUI();
     }
 
     function loadFromLocal() {
-      studentsData = JSON.parse(localStorage.getItem('examnet_students') || '[]');
+      const all = readLocalStudents();
+      studentsData = termsReady ? all.filter(st => st.term_id === selectedTermId) : all;
     }
 
+    // Keeps other semesters' local records when saving the semester on screen
     function saveToLocal() {
-      localStorage.setItem('examnet_students', JSON.stringify(studentsData));
+      if (!termsReady) {
+        localStorage.setItem('examnet_students', JSON.stringify(studentsData));
+        return;
+      }
+      const mine = new Set(studentsData.map(st => st.id));
+      const others = readLocalStudents().filter(st => st.term_id !== selectedTermId && !mine.has(st.id));
+      localStorage.setItem('examnet_students', JSON.stringify(studentsData.concat(others)));
     }
 
 
@@ -1903,20 +2403,22 @@ grant execute on function public.admin_add_registration(text,text,text,text,text
     async function findNameDuplicate(fullName, room, excludeId) {
       const key = nameKey(fullName);
       if (!key || !room) return { match: null, verified: true };
+      await ensureTermsLoaded();
+      const termId = getCheckTermId();
       let rows;
       if (supabaseClient) {
         try {
-          const { data, error } = await supabaseClient
+          const { data, error } = await termFilter(supabaseClient
             .from('exam_registrations')
             .select('id, full_name')
-            .eq('room_number', room);
+            .eq('room_number', room), termId);
           if (error || !data) return { match: null, verified: false };
           rows = data;
         } catch (e) {
           return { match: null, verified: false };
         }
       } else {
-        rows = JSON.parse(localStorage.getItem('examnet_students') || '[]').filter(s => s.room_number === room);
+        rows = readLocalStudents().filter(s => s.room_number === room && termMatches(s, termId));
       }
       const match = rows.find(r => r.id !== excludeId && nameKey(r.full_name) === key) || null;
       return { match, verified: true };
@@ -2013,6 +2515,7 @@ grant execute on function public.admin_add_registration(text,text,text,text,text
         default_password: defaultPassword,
         course: course,
         room_number: room,
+        ...(termsReady && activeTermId ? { term_id: activeTermId } : {}),
         created_at: new Date().toISOString()
       };
 
@@ -2030,7 +2533,8 @@ grant execute on function public.admin_add_registration(text,text,text,text,text
               student_id: studentId,
               default_password: defaultPassword,
               course: course,
-              room_number: room
+              room_number: room,
+              ...(termsReady && activeTermId ? { term_id: activeTermId } : {})
             }]);
 
           if (error) {
@@ -2130,16 +2634,18 @@ grant execute on function public.admin_add_registration(text,text,text,text,text
 
     // 'available' | 'taken' | 'unknown'
     async function lookupUsername(username) {
+      await ensureTermsLoaded();
+      const termId = getCheckTermId();
       if (supabaseClient) {
         try {
           const safe = username.replace(/[\\%_]/g, m => '\\' + m);
-          const { data, error } = await supabaseClient
-            .from('exam_registrations').select('id').ilike('username', safe).limit(1);
+          const { data, error } = await termFilter(supabaseClient
+            .from('exam_registrations').select('id').ilike('username', safe), termId).limit(1);
           if (error) return 'unknown';
           return (data && data.length) ? 'taken' : 'available';
         } catch (e) { return 'unknown'; }
       }
-      const local = JSON.parse(localStorage.getItem('examnet_students') || '[]');
+      const local = readLocalStudents().filter(s => termMatches(s, termId));
       return local.some(s => (s.username || '').toLowerCase() === username.toLowerCase()) ? 'taken' : 'available';
     }
 
@@ -2225,6 +2731,10 @@ grant execute on function public.admin_add_registration(text,text,text,text,text
     }
 
     function openAdminAddModal() {
+      if (termsReady && selectedTermId !== activeTermId) {
+        alert('You are viewing "' + currentTermLabel() + '", which is not the active semester. Switch the Semester selector to "' + termLabelById(activeTermId) + '" (or make this one active) before adding a student.');
+        return;
+      }
       admEl('studentid-prefix').textContent = STUDENT_ID_PREFIX;
       admEl('studentid-example').textContent = STUDENT_ID_PREFIX + 'A001';
       admEl('defpass').textContent = DEFAULT_PASS_PATTERN;
@@ -2391,7 +2901,8 @@ grant execute on function public.admin_add_registration(text,text,text,text,text
         student_id: studentId,
         default_password: DEFAULT_PASS_PATTERN,
         course: course,
-        room_number: room
+        room_number: room,
+        ...(termsReady && activeTermId ? { term_id: activeTermId } : {})
       };
       const result = await admInsertRecord(rec);
       done();
@@ -2622,11 +3133,13 @@ grant execute on function public.admin_add_registration(text,text,text,text,text
       }
 
       const wb = XLSX.utils.book_new();
+      const termLabel = (opts.termLabel !== undefined && opts.termLabel !== null) ? opts.termLabel : currentTermLabel();
 
       // 1. SUMMARY SHEET
       const summaryData = [
         ["ExamNet System - Master Registration Summary"],
         ["Generated At:", new Date().toLocaleString()],
+        ...(termLabel ? [["Semester:", termLabel]] : []),
         ["Total Registered Examinees:", studentsData.length],
         [],
         ["Course Breakdown"],
@@ -2700,7 +3213,8 @@ grant execute on function public.admin_add_registration(text,text,text,text,text
         XLSX.utils.book_append_sheet(wb, sheet, safeSheetName);
       });
 
-      XLSX.writeFile(wb, `ExamNet_${opts.fileTag || 'Registrations'}_${new Date().toISOString().slice(0,10)}.xlsx`);
+      const termSlug = termLabel ? '_' + termLabel.replace(/[^A-Za-z0-9]+/g, '-').replace(/^-+|-+$/g, '') : '';
+      XLSX.writeFile(wb, `ExamNet_${opts.fileTag || 'Registrations'}${termSlug}_${new Date().toISOString().slice(0,10)}.xlsx`);
       return true;
     }
 
@@ -2712,6 +3226,7 @@ grant execute on function public.admin_add_registration(text,text,text,text,text
 
     function openResetModal() {
       document.getElementById('reset-count').innerText = studentsData.length;
+      initResetScope();
       document.getElementById('reset-pass').value = '';
       document.getElementById('reset-backup').checked = true;
       document.getElementById('reset-config').checked = true;
@@ -2762,6 +3277,13 @@ grant execute on function public.admin_add_registration(text,text,text,text,text
 
       const wantBackup = document.getElementById('reset-backup').checked;
       const resetConfig = document.getElementById('reset-config').checked;
+      if (termsState === 'error') {
+        setResetError('Could not load the semester list, so nothing was deleted. Check your connection, reload the page and try again.');
+        return;
+      }
+      const scope = getResetScope();            // 'term' = only the semester on screen, 'all' = every semester
+      const scopeTermId = selectedTermId;
+      const scopeLabel = currentTermLabel();
       setResetBusy(true);
 
       try {
@@ -2770,10 +3292,10 @@ grant execute on function public.admin_add_registration(text,text,text,text,text
         await loadRegistrations();
 
         // 3) Backup first. If it fails, stop before deleting anything.
-        if (wantBackup && studentsData.length > 0) {
+        if (wantBackup) {
           setResetProgress('Downloading Excel backup...');
           try {
-            const ok = exportMultiSheetExcel({ silent: true, fileTag: 'BACKUP_Before_Reset' });
+            const ok = await backupBeforeReset(scope);
             if (!ok) throw new Error('Backup was not created');
           } catch (err) {
             console.error('Backup failed', err);
@@ -2787,12 +3309,13 @@ grant execute on function public.admin_add_registration(text,text,text,text,text
         // 4) Delete registrations
         setResetProgress('Deleting examinee records...');
         if (supabaseClient) {
-          const { error: delErr } = await supabaseClient.from('exam_registrations').delete().not('id', 'is', null);
+          const delBase = supabaseClient.from('exam_registrations').delete();
+          const { error: delErr } = await (scope === 'term' ? delBase.eq('term_id', scopeTermId) : delBase.not('id', 'is', null));
           if (delErr) throw new Error('Supabase delete error: ' + delErr.message);
 
           // Verify. RLS can silently block deletes without returning an error.
-          const { count, error: cntErr } = await supabaseClient
-            .from('exam_registrations').select('id', { count: 'exact', head: true });
+          const cntBase = supabaseClient.from('exam_registrations').select('id', { count: 'exact', head: true });
+          const { count, error: cntErr } = await (scope === 'term' ? cntBase.eq('term_id', scopeTermId) : cntBase);
           if (cntErr) throw new Error('Could not verify the reset: ' + cntErr.message);
           if (count && count > 0) {
             throw new Error(count + ' record(s) are still in Supabase. Your table may be missing the "Allow public deletes" policy (see Supabase Settings > SQL).');
@@ -2800,6 +3323,7 @@ grant execute on function public.admin_add_registration(text,text,text,text,text
         }
         studentsData = [];
         saveToLocal();
+        if (scope === 'all') localStorage.setItem('examnet_students', '[]');
 
         // 5) Optional: rooms/courses + registration deadline back to defaults
         if (resetConfig) {
@@ -2820,7 +3344,7 @@ grant execute on function public.admin_add_registration(text,text,text,text,text
         setResetBusy(false);
         closeModal('reset-modal');
         document.getElementById('reset-pass').value = '';
-        alert('Reset complete. All examinee data' + (resetConfig ? ', rooms/courses and the deadline' : '') + ' cleared. Admin password and Supabase settings were kept.');
+        alert('Reset complete. ' + (scope === 'term' ? 'Records for "' + scopeLabel + '"' : 'All examinee data from every semester') + (resetConfig ? ', rooms/courses and the deadline' : '') + ' cleared. ' + (scope === 'term' ? 'Other semesters, the ' : 'The ') + 'admin password and Supabase settings were kept.');
       } catch (err) {
         console.error('Reset failed', err);
         // Re-sync the screen with whatever is actually stored
